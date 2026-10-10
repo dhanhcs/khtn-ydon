@@ -1,0 +1,6 @@
+{
+  "name": "KHOA HỌC TỰ NHIÊN - Y ĐÔN",
+  "description": "Hệ thống học tập, kiểm tra trực tuyến môn Khoa học Tự nhiên - THCS & THPT Y Đôn (Tổ Lí - Hóa - Sinh - CN)",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

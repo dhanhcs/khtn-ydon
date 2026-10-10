@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <script>
+      // Suppress third-party browser extension noise (e.g. sender-wallet, crypto wallet extensions)
+      (function() {
+        function isNoiseText(text) {
+          if (!text) return false;
+          var s = String(text).toLowerCase();
+          return (
+            s.indexOf('sender-wallet') !== -1 ||
+            s.indexOf('sender_getproviderstate') !== -1 ||
+            s.indexOf('sender:') !== -1 ||
+            s.indexOf('no account exist') !== -1 ||
+            s.indexOf('notificationid') !== -1 ||
+            s.indexOf('failed to get initial state') !== -1 ||
+            s.indexOf('sender-wallet-providerresult') !== -1 ||
+            s.indexOf('chrome-extension://') !== -1 ||
+            s.indexOf('moz-extension://') !== -1
+          );
+        }
+
+        function isNoise(arg) {
+          if (!arg) return false;
+          if (typeof arg === 'string') return isNoiseText(arg);
+          if (arg instanceof Error && (isNoiseText(arg.message) || isNoiseText(arg.stack))) return true;
+          try {
+            var json = JSON.stringify(arg);
+            if (isNoiseText(json)) return true;
+          } catch (e) {}
+          try {
+            if (isNoiseText(arg.toString())) return true;
+          } catch (e) {}
+          return false;
+        }
+
+        function shouldSuppress(args) {
+          for (var i = 0; i < args.length; i++) {
+            if (isNoise(args[i])) return true;
+          }
+          return false;
+        }
+
+        // Intercept and wrap console error and warn
+        ['error', 'warn', 'info'].forEach(function(method) {
+          var original = console[method];
+          if (typeof original === 'function') {
+            var safeMethod = function() {
+              if (shouldSuppress(arguments)) return;
+              return original.apply(console, arguments);
+            };
+            try {
+              Object.defineProperty(console, method, {
+                get: function() { return safeMethod; },
+                set: function(fn) { original = fn; },
+                configurable: true,
+                enumerable: true
+              });
+            } catch (err) {
+              console[method] = safeMethod;
+            }
+          }
+        });
+
+        // Intercept message events in capture phase before extension handlers can log errors
+        window.addEventListener('message', function(event) {
+          try {
+            var data = event.data;
+            if (data && (data.type === 'sender-wallet-providerResult' || isNoise(data))) {
+              if (data.response && data.response.error) {
+                delete data.response.error;
+                data.response.accountId = null;
+                data.response.isSignedIn = false;
+              }
+              if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+              if (event.stopPropagation) event.stopPropagation();
+            }
+          } catch (e) {}
+        }, true);
+
+        // Intercept window error events
+        window.addEventListener('error', function(event) {
+          if (isNoise(event.message) || isNoise(event.filename) || isNoise(event.error)) {
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+            if (event.preventDefault) event.preventDefault();
+            return true;
+          }
+        }, true);
+
+        // Intercept unhandled promise rejections
+        window.addEventListener('unhandledrejection', function(event) {
+          if (isNoise(event.reason)) {
+            if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+            if (event.preventDefault) event.preventDefault();
+            return true;
+          }
+        }, true);
+      })();
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KHOA HỌC TỰ NHIÊN - Y ĐÔN</title>
+    <meta name="description" content="Hệ thống học tập, kiểm tra trực tuyến môn Khoa học Tự nhiên - THCS & THPT Y Đôn (Tổ Lí - Hóa - Sinh - CN)" />
+    <meta property="og:title" content="KHOA HỌC TỰ NHIÊN - Y ĐÔN" />
+    <meta property="og:description" content="Hệ thống học tập, kiểm tra trực tuyến môn Khoa học Tự nhiên - THCS & THPT Y Đôn (Tổ Lí - Hóa - Sinh - CN)" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-slate-50 text-slate-800 font-sans antialiased min-h-screen">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
