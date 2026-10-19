@@ -4,8 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
+    "dev": "tsx server.ts",
     "build": "vite build",
+    "start": "tsx server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit"
@@ -13,13 +14,20 @@
   "dependencies": {
     "@google/genai": "^2.4.0",
     "@tailwindcss/vite": "^4.1.14",
+    "@types/jszip": "^3.4.1",
+    "@types/katex": "^0.16.8",
     "@vitejs/plugin-react": "^5.0.4",
+    "docx": "^9.11.0",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
+    "jszip": "^3.10.2",
+    "katex": "^0.19.0",
     "lucide-react": "^0.546.0",
+    "mammoth": "^1.13.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "recharts": "^3.10.1",
     "vite": "^6.2.3",
     "xlsx": "^0.18.5"
   },

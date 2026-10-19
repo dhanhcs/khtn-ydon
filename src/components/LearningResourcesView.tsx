@@ -23,7 +23,8 @@ import {
   Lock,
   CheckCircle2,
   Share2,
-  Clock
+  Clock,
+  Users
 } from 'lucide-react';
 import { 
   LearningResource, 
@@ -35,6 +36,9 @@ import {
 import { CommentSection } from './CommentSection';
 import { ResourceEditModal } from './ResourceEditModal';
 import { DigitalProductGradingModal } from './DigitalProductGradingModal';
+import { ImageViewerModal } from './ImageViewerModal';
+import { InteractiveLessonView } from './InteractiveLessonView';
+import { isTeacherAdmin } from '../utils/permissionUtils';
 
 interface LearningResourcesViewProps {
   category: 'study_corner' | 'homework' | 'prep_guide' | 'digital_products' | 'digital_tools' | 'hsg_prep';
@@ -56,16 +60,19 @@ export function LearningResourcesView({
   const [selectedSubject, setSelectedSubject] = useState<SubjectType>('all');
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [prepGuideTab, setPrepGuideTab] = useState<'interactive_lesson' | 'documents'>('interactive_lesson');
   
   // Modals state
   const [viewingResource, setViewingResource] = useState<LearningResource | null>(null);
   const [editingResource, setEditingResource] = useState<LearningResource | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [gradingResource, setGradingResource] = useState<LearningResource | null>(null);
+  const [lightboxImg, setLightboxImg] = useState<{ url: string; title?: string } | null>(null);
   
   // Notice modal / message for student trying to post in teacher-only section
   const [permissionNotice, setPermissionNotice] = useState<string | null>(null);
 
+  const canGrade = isTeacherAdmin(currentUser);
   const isAdmin = currentUser?.role === 'admin';
   const isDigitalProducts = category === 'digital_products';
   const isSubmissionCategory = category === 'study_corner' || category === 'prep_guide' || category === 'digital_products';
@@ -242,12 +249,48 @@ export function LearningResourcesView({
   return (
     <div id={`category-view-${category}`} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
       
-      {/* Category Banner */}
-      <div className={`text-white p-6 sm:p-8 rounded-3xl shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-6 ${
-        isDigitalProducts 
-          ? 'bg-gradient-to-r from-amber-700 via-orange-800 to-slate-900' 
-          : 'bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900'
-      }`}>
+      {/* Tab Switcher specifically for "Hướng dẫn soạn bài" */}
+      {category === 'prep_guide' && (
+        <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPrepGuideTab('interactive_lesson')}
+            className={`px-4 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center gap-2 ${
+              prepGuideTab === 'interactive_lesson'
+                ? 'bg-gradient-to-r from-indigo-600 via-blue-600 to-purple-600 text-white shadow-md'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+            }`}
+          >
+            <Users className="w-4 h-4 text-amber-300" />
+            <span>1. Đề Tương Tác Theo Bài Học (Nhóm 1 - 8)</span>
+            <span className="bg-amber-400 text-slate-950 text-[10px] px-1.5 py-0.2 rounded-full font-bold">Mới & Nổi Bật</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setPrepGuideTab('documents')}
+            className={`px-4 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center gap-2 ${
+              prepGuideTab === 'documents'
+                ? 'bg-purple-700 text-white shadow-md'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>2. Tài Liệu Hướng Dẫn Soạn Bài & Thí Nghiệm</span>
+          </button>
+        </div>
+      )}
+
+      {category === 'prep_guide' && prepGuideTab === 'interactive_lesson' ? (
+        <InteractiveLessonView currentUser={currentUser} />
+      ) : (
+        <>
+          {/* Category Banner */}
+          <div className={`text-white p-6 sm:p-8 rounded-3xl shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-6 ${
+            isDigitalProducts 
+              ? 'bg-gradient-to-r from-amber-700 via-orange-800 to-slate-900' 
+              : 'bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900'
+          }`}>
         <div className="space-y-2 max-w-2xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm text-xs font-semibold text-blue-200">
             <Icon className="w-4 h-4" />
@@ -293,6 +336,8 @@ export function LearningResourcesView({
             <span>
               {category === 'digital_products'
                 ? '+ Gửi Sản Phẩm Số Mới'
+                : category === 'digital_tools'
+                ? '+ Thêm link CCS'
                 : category === 'study_corner'
                 ? '+ Gửi Bài Góc Học Tập (Đính kèm File)'
                 : category === 'prep_guide'
@@ -445,9 +490,19 @@ export function LearningResourcesView({
                   )}
 
                   {/* Image preview if image */}
-                  {res.fileType === 'image' && res.fileData && (
-                    <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50 max-h-36">
-                      <img src={res.fileData} alt={res.title} className="w-full h-32 object-cover" />
+                  {(res.fileType === 'image' || (res.fileData && res.fileData.startsWith('data:image/'))) && res.fileData && (
+                    <div 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setLightboxImg({ url: res.fileData!, title: res.title });
+                      }}
+                      className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50 max-h-36 relative group cursor-pointer"
+                      title="Nhấp để xem ảnh phóng to toàn màn hình"
+                    >
+                      <img src={res.fileData} alt={res.title} className="w-full h-32 object-cover transition-transform group-hover:scale-105" />
+                      <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition-opacity">
+                        <span>🔍 Xem ảnh phóng to</span>
+                      </div>
                     </div>
                   )}
 
@@ -505,8 +560,8 @@ export function LearningResourcesView({
                       </button>
                     )}
 
-                    {/* Digital Product: Nút Chấm bài (Quản trị phân môn) */}
-                    {isDigitalProducts && (
+                    {/* Digital Product: Nút Chấm bài - Chỉ Giáo viên Quản trị */}
+                    {isDigitalProducts && canGrade && (
                       <button
                         type="button"
                         id={`grade-product-btn-${res.id}`}
@@ -516,7 +571,7 @@ export function LearningResourcesView({
                             ? 'bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300' 
                             : 'bg-amber-500 hover:bg-amber-600 text-white'
                         }`}
-                        title="Chấm điểm và ghi nhận xét của Quản trị phân môn"
+                        title="Chấm điểm và ghi nhận xét của Quản trị phân môn (Dành riêng cho Admin)"
                       >
                         <Award className="w-3.5 h-3.5" />
                         <span>{hasGrading ? 'Sửa điểm' : 'Chấm bài'}</span>
@@ -536,14 +591,10 @@ export function LearningResourcesView({
                         </button>
                       )}
 
-                      {isAdmin && (
+                      {(isAdmin || (isSubmissionCategory && currentUser?.name && currentUser.name.trim().toLowerCase() === res.authorName?.trim().toLowerCase())) && (
                         <button
                           type="button"
-                          onClick={() => {
-                            if (window.confirm(`Xác nhận xóa bài "${res.title}"?`)) {
-                              onDeleteResource(res.id);
-                            }
-                          }}
+                          onClick={() => onDeleteResource(res.id)}
                           className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
                           title="Xóa bài viết này"
                         >
@@ -560,6 +611,8 @@ export function LearningResourcesView({
           })
         )}
       </div>
+        </>
+      )}
 
       {/* Permission Notice Modal */}
       {permissionNotice && (
@@ -620,12 +673,28 @@ export function LearningResourcesView({
                 </div>
               </div>
 
-              <button
-                onClick={() => setViewingResource(null)}
-                className="text-slate-400 hover:text-slate-600 text-xs font-bold p-1.5 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer"
-              >
-                Đóng
-              </button>
+              <div className="flex items-center gap-2">
+                {(isAdmin || (isSubmissionCategory && currentUser?.name && currentUser.name.trim().toLowerCase() === viewingResource.authorName?.trim().toLowerCase())) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onDeleteResource(viewingResource.id);
+                      setViewingResource(null);
+                    }}
+                    className="flex items-center gap-1 text-rose-600 hover:text-rose-700 text-xs font-bold px-3 py-1.5 bg-rose-50 hover:bg-rose-100 rounded-xl cursor-pointer border border-rose-200"
+                    title="Xóa bài viết này khỏi hệ thống"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Xóa bài</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setViewingResource(null)}
+                  className="text-slate-500 hover:text-slate-700 text-xs font-bold px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-xl cursor-pointer"
+                >
+                  Đóng
+                </button>
+              </div>
             </div>
 
             {/* Description & Content */}
@@ -654,9 +723,16 @@ export function LearningResourcesView({
               )}
 
               {/* Image Preview */}
-              {viewingResource.fileType === 'image' && viewingResource.fileData && (
-                <div className="p-2 bg-slate-100 rounded-2xl text-center">
-                  <img src={viewingResource.fileData} alt={viewingResource.title} className="max-h-96 w-full object-contain mx-auto rounded-xl" />
+              {(viewingResource.fileType === 'image' || (viewingResource.fileData && viewingResource.fileData.startsWith('data:image/'))) && viewingResource.fileData && (
+                <div 
+                  onClick={() => setLightboxImg({ url: viewingResource.fileData!, title: viewingResource.title })}
+                  className="p-2 bg-slate-100 rounded-2xl text-center cursor-pointer group relative overflow-hidden"
+                  title="Nhấp để xem ảnh phóng to toàn màn hình"
+                >
+                  <img src={viewingResource.fileData} alt={viewingResource.title} className="max-h-96 w-full object-contain mx-auto rounded-xl shadow-xs" />
+                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition-opacity rounded-2xl">
+                    <span>🔍 Nhấp để phóng to toàn màn hình</span>
+                  </div>
                 </div>
               )}
 
@@ -709,13 +785,16 @@ export function LearningResourcesView({
                       <Award className="w-4 h-4 text-amber-600" />
                       Kết quả chấm bài của Quản trị phân môn:
                     </span>
-                    <button
-                      onClick={() => setGradingResource(viewingResource)}
-                      className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg text-xs flex items-center gap-1 shadow-xs cursor-pointer"
-                    >
-                      <Award className="w-3 h-3" />
-                      <span>{viewingResource.grading ? 'Sửa điểm & nhận xét' : 'Chấm bài ngay'}</span>
-                    </button>
+                    {canGrade && (
+                      <button
+                        onClick={() => setGradingResource(viewingResource)}
+                        className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg text-xs flex items-center gap-1 shadow-xs cursor-pointer"
+                        title="Dành riêng cho Giáo viên Quản trị"
+                      >
+                        <Award className="w-3 h-3" />
+                        <span>{viewingResource.grading ? 'Sửa điểm & nhận xét' : 'Chấm bài ngay'}</span>
+                      </button>
+                    )}
                   </div>
 
                   {viewingResource.grading ? (
@@ -796,6 +875,14 @@ export function LearningResourcesView({
           onSaveGrading={handleSaveGrading}
         />
       )}
+
+      {/* LIGHTBOX IMAGE VIEWER MODAL */}
+      <ImageViewerModal
+        isOpen={!!lightboxImg}
+        imageUrl={lightboxImg?.url || null}
+        title={lightboxImg?.title}
+        onClose={() => setLightboxImg(null)}
+      />
 
     </div>
   );

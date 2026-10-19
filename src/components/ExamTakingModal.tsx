@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Exam, StudentSubmission, MultipleChoiceQuestion, TrueFalseQuestion, ShortAnswerQuestion } from '../types';
 import { shuffleExamQuestions } from '../utils/examShuffler';
+import { FormulaText } from './FormulaText';
 
 interface ExamTakingModalProps {
   exam: Exam;
@@ -390,14 +391,41 @@ export function ExamTakingModal({
     // 3. Calculate Short Answer score (1.0 pt max)
     let saScore = 0;
     if (saQuestion) {
-      const studentSa = (saAnswers[saQuestion.id] || '').trim().toLowerCase();
-      if (studentSa) {
-        const isMatch = saQuestion.acceptableAnswers.some(ans => {
-          const normAns = ans.trim().toLowerCase();
-          return normAns === studentSa || normAns.replace(',', '.') === studentSa.replace(',', '.');
+      const rawSa = (saAnswers[saQuestion.id] || '').trim();
+      if (saQuestion.blanks && saQuestion.blanks.length > 0) {
+        let parsedObj: Record<string, string> = {};
+        try {
+          parsedObj = JSON.parse(rawSa);
+        } catch {
+          const parts = rawSa.split(/[;|]/);
+          parts.forEach((p, idx) => {
+            parsedObj[String(idx + 1)] = p.trim();
+          });
+        }
+        let earnedSa = 0;
+        saQuestion.blanks.forEach((blank, idx) => {
+          const userVal = (parsedObj[blank.id] || parsedObj[String(idx + 1)] || '').trim().toLowerCase();
+          if (userVal) {
+            const isMatch = blank.acceptableAnswers.some(ans => {
+              const norm = ans.trim().toLowerCase();
+              return norm === userVal || norm.replace(',', '.') === userVal.replace(',', '.');
+            });
+            if (isMatch) {
+              earnedSa += (blank.points ?? 0.5);
+            }
+          }
         });
-        if (isMatch) {
-          saScore = 1.0;
+        saScore = Math.min(1.0, Math.round(earnedSa * 100) / 100);
+      } else {
+        const studentSa = rawSa.toLowerCase();
+        if (studentSa) {
+          const isMatch = saQuestion.acceptableAnswers.some(ans => {
+            const normAns = ans.trim().toLowerCase();
+            return normAns === studentSa || normAns.replace(',', '.') === studentSa.replace(',', '.');
+          });
+          if (isMatch) {
+            saScore = 1.0;
+          }
         }
       }
     }
@@ -603,12 +631,19 @@ export function ExamTakingModal({
                             <span className="font-extrabold text-blue-700 mr-2 bg-blue-50 px-2 py-0.5 rounded-md">
                               Câu {qNum}:
                             </span>
-                            {q.question}
+                            <FormulaText text={q.question} />
                           </p>
                           <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full shrink-0">
                             0.5 điểm
                           </span>
                         </div>
+
+                        {/* Ảnh minh họa nếu có */}
+                        {q.imageUrl && (
+                          <div className="my-2 rounded-2xl overflow-hidden border border-blue-100 bg-slate-50/80 p-2 flex justify-center">
+                            <img src={q.imageUrl} alt={`Ảnh minh họa câu ${qNum}`} className="max-h-60 max-w-full object-contain rounded-xl shadow-xs" />
+                          </div>
+                        )}
 
                         {/* Options A, B, C, D */}
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
@@ -635,7 +670,9 @@ export function ExamTakingModal({
                                 }`}>
                                   {label}
                                 </span>
-                                <span className="mt-0.5 leading-relaxed">{opt}</span>
+                                <span className="mt-0.5 leading-relaxed">
+                                  <FormulaText text={opt} />
+                                </span>
                               </button>
                             );
                           })}
@@ -651,12 +688,19 @@ export function ExamTakingModal({
                             <span className="font-extrabold text-indigo-700 mr-2 bg-indigo-50 px-2 py-0.5 rounded-md">
                               Câu {qNum} (Đúng / Sai):
                             </span>
-                            {q.question}
+                            <FormulaText text={q.question} />
                           </p>
                           <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-full shrink-0 border border-indigo-200">
                             1.0 điểm
                           </span>
                         </div>
+
+                        {/* Ảnh minh họa nếu có */}
+                        {q.imageUrl && (
+                          <div className="my-2 rounded-2xl overflow-hidden border border-purple-100 bg-slate-50/80 p-2 flex justify-center">
+                            <img src={q.imageUrl} alt={`Ảnh minh họa câu ${qNum}`} className="max-h-60 max-w-full object-contain rounded-xl shadow-xs" />
+                          </div>
+                        )}
 
                         <div className="text-xs text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200 font-medium">
                           * Hướng dẫn: Chọn Đúng hoặc Sai cho từng ý a), b), c), d). (Đúng 1 ý: 0.1đ, 2 ý: 0.25đ, 3 ý: 0.5đ, 4 ý: 1.0đ).
@@ -675,7 +719,9 @@ export function ExamTakingModal({
                                   <span className="font-black text-indigo-700 uppercase min-w-[24px]">
                                     {st.subId})
                                   </span>
-                                  <span className="leading-relaxed">{st.text}</span>
+                                  <span className="leading-relaxed">
+                                    <FormulaText text={st.text} />
+                                  </span>
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                                   <button
@@ -734,41 +780,109 @@ export function ExamTakingModal({
                             <span className="font-extrabold text-emerald-700 mr-2 bg-emerald-50 px-2 py-0.5 rounded-md">
                               Câu {qNum} (Trả lời ngắn):
                             </span>
-                            {q.question}
+                            <FormulaText text={q.question} />
                           </p>
                           <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full shrink-0 border border-emerald-200">
                             1.0 điểm
                           </span>
                         </div>
 
-                        <div className="text-xs text-blue-800 bg-blue-50 p-2.5 rounded-xl border border-blue-200 font-medium">
-                          * Hướng dẫn: Nhập kết quả tính toán hoặc câu trả lời ngắn gọn vào ô dưới đây (ví dụ số có thể viết dạng thập phân).
-                        </div>
-
-                        <div className="pt-2 max-w-lg space-y-1.5">
-                          <label className="block text-xs font-bold text-slate-700">
-                            Đáp án bài làm của em:
-                          </label>
-                          <div className="relative flex items-center">
-                            <input
-                              id="short-answer-input"
-                              type="text"
-                              disabled={isLockedForCheating}
-                              value={saAnswers[q.id] || ''}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setSaAnswers(prev => ({ ...prev, [q.id]: val }));
-                              }}
-                              placeholder="Nhập kết quả hoặc đáp án..."
-                              className="w-full px-4 py-3 bg-white border-2 border-slate-300 focus:border-blue-600 rounded-xl text-sm font-bold outline-none transition-colors"
-                            />
-                            {q.unit && (
-                              <span className="absolute right-3.5 text-xs font-black text-slate-500 bg-slate-100 px-2 py-1 rounded">
-                                {q.unit}
-                              </span>
-                            )}
+                        {/* Ảnh minh họa nếu có */}
+                        {q.imageUrl && (
+                          <div className="my-2 rounded-2xl overflow-hidden border border-emerald-100 bg-slate-50/80 p-2 flex justify-center">
+                            <img src={q.imageUrl} alt={`Ảnh minh họa câu ${qNum}`} className="max-h-60 max-w-full object-contain rounded-xl shadow-xs" />
                           </div>
-                        </div>
+                        )}
+
+                        {q.blanks && q.blanks.length > 0 ? (
+                          <div className="space-y-3 pt-2">
+                            <div className="text-xs text-blue-800 bg-blue-50 p-2.5 rounded-xl border border-blue-200 font-medium">
+                              * Hướng dẫn: Đề bài yêu cầu điền 2 kết quả số tương ứng vào 2 ô trống bên dưới (mỗi ô 0.5 điểm, có thể nhập số thập phân).
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {q.blanks.map((b, bIdx) => {
+                                let curVal = '';
+                                const raw = saAnswers[q.id] || '';
+                                try {
+                                  const obj = JSON.parse(raw);
+                                  curVal = obj[b.id] || obj[String(bIdx + 1)] || '';
+                                } catch {
+                                  const parts = raw.split(/[;|]/);
+                                  curVal = (parts[bIdx] || '').trim();
+                                }
+
+                                return (
+                                  <div key={b.id || bIdx} className="bg-slate-50/80 p-3.5 rounded-2xl border border-slate-200 space-y-1.5 shadow-2xs">
+                                    <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                                      <span><FormulaText text={b.label || `Chỗ điền (${bIdx + 1})`} />:</span>
+                                      <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                        0.5 điểm
+                                      </span>
+                                    </div>
+                                    <div className="relative flex items-center">
+                                      <input
+                                        id={`short-answer-blank-${b.id || bIdx}`}
+                                        type="text"
+                                        disabled={isLockedForCheating}
+                                        value={curVal}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          let obj: Record<string, string> = {};
+                                          try {
+                                            obj = JSON.parse(saAnswers[q.id] || '{}');
+                                          } catch {
+                                            const parts = (saAnswers[q.id] || '').split(/[;|]/);
+                                            obj['1'] = (parts[0] || '').trim();
+                                            obj['2'] = (parts[1] || '').trim();
+                                          }
+                                          obj[b.id || String(bIdx + 1)] = val;
+                                          setSaAnswers(prev => ({ ...prev, [q.id]: JSON.stringify(obj) }));
+                                        }}
+                                        placeholder={`Nhập số cho chỗ điền ${bIdx + 1}...`}
+                                        className="w-full px-3.5 py-2.5 bg-white border-2 border-slate-300 focus:border-blue-600 rounded-xl text-sm font-bold outline-none transition-colors"
+                                      />
+                                      {b.unit && (
+                                        <span className="absolute right-3 text-xs font-black text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                                          <FormulaText text={b.unit} />
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="text-xs text-blue-800 bg-blue-50 p-2.5 rounded-xl border border-blue-200 font-medium">
+                              * Hướng dẫn: Nhập kết quả tính toán hoặc câu trả lời ngắn gọn vào ô dưới đây (ví dụ số có thể viết dạng thập phân).
+                            </div>
+                            <div className="pt-1 max-w-lg space-y-1.5">
+                              <label className="block text-xs font-bold text-slate-700">
+                                Đáp án bài làm của em:
+                              </label>
+                              <div className="relative flex items-center">
+                                <input
+                                  id="short-answer-input"
+                                  type="text"
+                                  disabled={isLockedForCheating}
+                                  value={saAnswers[q.id] || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setSaAnswers(prev => ({ ...prev, [q.id]: val }));
+                                  }}
+                                  placeholder="Nhập kết quả hoặc đáp án..."
+                                  className="w-full px-4 py-3 bg-white border-2 border-slate-300 focus:border-blue-600 rounded-xl text-sm font-bold outline-none transition-colors"
+                                />
+                                {q.unit && (
+                                  <span className="absolute right-3.5 text-xs font-black text-slate-500 bg-slate-100 px-2 py-1 rounded">
+                                    {q.unit}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 

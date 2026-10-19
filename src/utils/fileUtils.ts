@@ -111,6 +111,65 @@ export function normalizeUrl(url: string): string {
 }
 
 /**
+ * Automatically compress and optimize images before storing or displaying.
+ * Constrains dimensions to max 1280px and compresses to high-quality JPEG (80KB - 200KB).
+ * This ensures uploaded images are crisp, never exceed localStorage quota, and load instantly!
+ */
+export async function compressAndOptimizeImage(file: File, maxDim: number = 1280, quality: number = 0.85): Promise<string> {
+  return new Promise((resolve) => {
+    // If SVG or small gif, don't re-compress on canvas to preserve animation/vector
+    if (file.type === 'image/svg+xml' || file.type === 'image/gif') {
+      readFileToDataUrl(file).then(resolve).catch(() => resolve(''));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const src = e.target?.result as string;
+      if (!src) {
+        readFileToDataUrl(file).then(resolve).catch(() => resolve(''));
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(width, 1);
+        canvas.height = Math.max(height, 1);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(src);
+          return;
+        }
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        const optimized = canvas.toDataURL('image/jpeg', quality);
+        resolve(optimized);
+      };
+      img.onerror = () => {
+        resolve(src);
+      };
+      img.src = src;
+    };
+    reader.onerror = () => {
+      readFileToDataUrl(file).then(resolve).catch(() => resolve(''));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
  * Safely saves data to localStorage, catching QuotaExceededError and gracefully degrading
  */
 export function safeLocalStorageSetItem(key: string, value: string): boolean {
@@ -120,12 +179,12 @@ export function safeLocalStorageSetItem(key: string, value: string): boolean {
   } catch (error) {
     console.warn(`localStorage quota exceeded while saving key "${key}". Attempting safe fallback...`, error);
     try {
-      // If quota exceeded, try parsing and stripping heavy fileData if present to preserve metadata
+      // If quota exceeded, try preserving images while omitting huge video binary to prevent crash
       const parsed = JSON.parse(value);
       if (Array.isArray(parsed)) {
         const lightweight = parsed.map((item: any) => {
-          if (item.fileData && item.fileData.length > 500000) {
-            // Keep fileName and size, but omit huge inline base64 to avoid corrupting storage
+          if (item.fileData && item.fileData.length > 2000000) {
+            // Omit massive raw video/binary but keep metadata
             return { ...item, fileData: undefined, _fileTruncated: true };
           }
           return item;

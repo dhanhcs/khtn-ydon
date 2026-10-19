@@ -29,8 +29,12 @@ import {
   Info
 } from 'lucide-react';
 import { GradeLevel, HomeworkRecord, HomeworkSubmission, DigitalFileType, PostComment, UserSession } from '../types';
+import { isTeacherAdmin } from '../utils/permissionUtils';
 import { CommentSection } from './CommentSection';
-import { readFileToDataUrl, normalizeUrl, safeLocalStorageSetItem } from '../utils/fileUtils';
+import { readFileToDataUrl, normalizeUrl, safeLocalStorageSetItem, compressAndOptimizeImage } from '../utils/fileUtils';
+import { ImageViewerModal } from './ImageViewerModal';
+import { FormulaText } from './FormulaText';
+import { InteractiveLessonView } from './InteractiveLessonView';
 
 interface HomeworkViewProps {
   currentUser: UserSession | null;
@@ -180,6 +184,7 @@ export function HomeworkView({ currentUser, onRequireLogin }: HomeworkViewProps)
   const [gradingSub, setGradingSub] = useState<{ hwId: string; submission: HomeworkSubmission } | null>(null);
   const [gradeScore, setGradeScore] = useState<number>(9.0);
   const [gradeFeedback, setGradeFeedback] = useState<string>('');
+  const [lightboxImg, setLightboxImg] = useState<{ url: string; title?: string } | null>(null);
 
   const [permissionNotice, setPermissionNotice] = useState<string | null>(null);
   const [selectedSubject, setSelectedSubject] = useState<'all' | 'physics' | 'chemistry' | 'biology'>('all');
@@ -203,7 +208,46 @@ export function HomeworkView({ currentUser, onRequireLogin }: HomeworkViewProps)
   const [formIsUploading, setFormIsUploading] = useState(false);
   const formFileInputRef = useRef<HTMLInputElement>(null);
 
-  const isAdmin = currentUser?.role === 'admin';
+  // Only Giáo viên Quản trị (Admin) has teacher management & grading rights
+  const isAdmin = isTeacherAdmin(currentUser);
+  const [homeworkSubTab, setHomeworkSubTab] = useState<'assignments' | 'interactive'>('assignments');
+
+  const handleDownloadHomeworkFile = (hw: HomeworkRecord) => {
+    if (hw.fileData) {
+      const a = document.createElement('a');
+      a.href = hw.fileData;
+      a.download = hw.fileName || `${hw.title.replace(/\s+/g, '_')}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
+    // Tạo file Word (.doc) chuẩn từ nội dung đề bài trực tiếp để học sinh tải về máy
+    const htmlContent = `
+      <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+      <head><meta charset='utf-8'><title>${hw.title}</title></head>
+      <body style="font-family: 'Times New Roman', serif; font-size: 13pt; line-height: 1.5;">
+        <h2 style="color: #1e3a8a; margin-bottom: 4pt;">TRƯỜNG THCS VÀ THPT Y ĐÔN — TỔ KHOA HỌC TỰ NHIÊN</h2>
+        <h3 style="margin-top: 0;">${hw.title}</h3>
+        <p><strong>Giáo viên giao bài:</strong> ${hw.teacher} | <strong>Khối lớp:</strong> ${hw.grade} | <strong>Hạn nộp:</strong> ${hw.deadline}</p>
+        <hr/>
+        <h4>I. Hướng dẫn thực hiện:</h4>
+        <p>${hw.description}</p>
+        <h4>II. Nội dung câu hỏi & bài tập:</h4>
+        ${(hw.questions || []).map(q => `<p>${q}</p>`).join('')}
+      </body>
+      </html>
+    `;
+    const blob = new Blob(['\ufeff', htmlContent], { type: 'application/msword;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = hw.fileName ? hw.fileName.replace(/\.docx$/i, '.doc') : `Bai_tap_KHTN_${hw.id}.doc`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const saveHomeworkList = (next: HomeworkRecord[]) => {
     setHomeworkList(next);
@@ -254,11 +298,9 @@ export function HomeworkView({ currentUser, onRequireLogin }: HomeworkViewProps)
   };
 
   const handleDeleteHomework = (id: string) => {
-    if (window.confirm('Xác nhận xóa bài tập này?')) {
-      const next = homeworkList.filter(h => h.id !== id);
-      saveHomeworkList(next);
-      if (selectedHw?.id === id) setSelectedHw(null);
-    }
+    const next = homeworkList.filter(h => h.id !== id);
+    saveHomeworkList(next);
+    if (selectedHw?.id === id) setSelectedHw(null);
   };
 
   // Teacher file upload handler - Resilient with fallback
@@ -302,8 +344,13 @@ export function HomeworkView({ currentUser, onRequireLogin }: HomeworkViewProps)
     }
 
     try {
-      const dataUrl = await readFileToDataUrl(file);
-      setFormFileData(dataUrl);
+      if (detectedType === 'image') {
+        const optimized = await compressAndOptimizeImage(file);
+        setFormFileData(optimized);
+      } else {
+        const dataUrl = await readFileToDataUrl(file);
+        setFormFileData(dataUrl);
+      }
       setFormIsUploading(false);
     } catch (err: any) {
       console.warn('Teacher file read fallback active:', err);
@@ -359,8 +406,13 @@ export function HomeworkView({ currentUser, onRequireLogin }: HomeworkViewProps)
     }
 
     try {
-      const dataUrl = await readFileToDataUrl(file);
-      setFileData(dataUrl);
+      if (detectedType === 'image') {
+        const optimized = await compressAndOptimizeImage(file);
+        setFileData(optimized);
+      } else {
+        const dataUrl = await readFileToDataUrl(file);
+        setFileData(dataUrl);
+      }
       setSubIsUploading(false);
     } catch (err: any) {
       console.warn('Student file read fallback active:', err);
@@ -506,6 +558,24 @@ export function HomeworkView({ currentUser, onRequireLogin }: HomeworkViewProps)
     }
 
     setSubmittingHw(null);
+  };
+
+  // Delete a student submission (Học sinh xóa bài của mình hoặc Giáo viên xóa)
+  const handleDeleteSubmission = (hwId: string, subId: string) => {
+    const ok = window.confirm ? window.confirm('Bạn có chắc chắn muốn xóa bài nộp này không?') : true;
+    if (ok) {
+      const next = homeworkList.map(h => {
+        if (h.id === hwId) {
+          const updatedSubs = (h.submissions || []).filter(s => s.id !== subId);
+          return { ...h, submissions: updatedSubs };
+        }
+        return h;
+      });
+      saveHomeworkList(next);
+      if (selectedHw?.id === hwId) {
+        setSelectedHw(prev => prev ? { ...prev, submissions: (prev.submissions || []).filter(s => s.id !== subId) } : null);
+      }
+    }
   };
 
   // Teacher Grade Submission
@@ -658,6 +728,39 @@ export function HomeworkView({ currentUser, onRequireLogin }: HomeworkViewProps)
         </button>
       </div>
 
+      {/* Sub-tab Switcher: Bài tập về nhà (Soạn trực tiếp & Kèm file) vs Bài tập tương tác */}
+      <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setHomeworkSubTab('assignments')}
+          className={`px-4 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center gap-2 ${
+            homeworkSubTab === 'assignments'
+              ? 'bg-amber-600 text-white shadow-md'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+          }`}
+        >
+          <ClipboardList className="w-4 h-4" />
+          <span>1. Bài Tập Về Nhà (Soạn Trực Tiếp & Kèm File Tải Về)</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setHomeworkSubTab('interactive')}
+          className={`px-4 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer flex items-center gap-2 ${
+            homeworkSubTab === 'interactive'
+              ? 'bg-gradient-to-r from-indigo-600 via-blue-600 to-purple-600 text-white shadow-md'
+              : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-amber-300" />
+          <span>2. Bài Tập Tương Tác Theo Bài Học (Nhóm 1 - 8)</span>
+        </button>
+      </div>
+
+      {homeworkSubTab === 'interactive' ? (
+        <InteractiveLessonView currentUser={currentUser} />
+      ) : (
+        <>
       {/* Filter Bar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-1.5 flex-wrap">
@@ -741,30 +844,43 @@ export function HomeworkView({ currentUser, onRequireLogin }: HomeworkViewProps)
                   </div>
 
                   <h3 className="font-bold text-sm sm:text-base text-slate-900 leading-snug">
-                    {hw.title}
+                    <FormulaText text={hw.title} />
                   </h3>
 
                   <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">
-                    {hw.description}
+                    <FormulaText text={hw.description} />
                   </p>
 
-                  {/* Teacher attached file badge */}
+                  {/* Teacher attached file badge with clear display & download button */}
                   {(hw.fileName || hw.fileType) && (
                     <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 overflow-hidden">
                         {renderFileBadge(hw.fileType, hw.fileName, hw.fileSize, hw.videoDurationSeconds)}
-                        <span className="text-[11px] font-semibold text-slate-700 truncate">{hw.fileName}</span>
+                        <span className="text-[11px] font-semibold text-slate-700 truncate">{hw.fileName || 'De_bai_tap.docx'}</span>
                       </div>
-                      {hw.fileData && (
-                        <a
-                          href={hw.fileData}
-                          download={hw.fileName || 'tai_lieu_bai_tap'}
-                          className="shrink-0 text-blue-600 hover:text-blue-800 text-[11px] font-bold flex items-center gap-1"
-                        >
-                          <Download className="w-3 h-3" />
-                          <span>Tải</span>
-                        </a>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadHomeworkFile(hw)}
+                        className="shrink-0 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer shadow-2xs"
+                        title="Tải file bài tập về máy"
+                      >
+                        <Download className="w-3 h-3" />
+                        <span>Tải về</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Direct image preview for teacher homework image */}
+                  {(hw.fileType === 'image' || (hw.fileData && hw.fileData.startsWith('data:image/'))) && hw.fileData && (
+                    <div 
+                      onClick={() => setLightboxImg({ url: hw.fileData!, title: `Đề bài: ${hw.title}` })}
+                      className="rounded-xl overflow-hidden border border-amber-200 bg-amber-50/50 max-h-48 relative group cursor-pointer my-1 text-center"
+                      title="Nhấp để xem ảnh bài tập phóng to toàn màn hình"
+                    >
+                      <img src={hw.fileData} alt={hw.title} className="max-h-44 w-full object-contain mx-auto transition-transform group-hover:scale-105" />
+                      <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition-opacity">
+                        <span>🔍 Xem ảnh đề bài phóng to</span>
+                      </div>
                     </div>
                   )}
 
@@ -846,6 +962,8 @@ export function HomeworkView({ currentUser, onRequireLogin }: HomeworkViewProps)
           })
         )}
       </div>
+      </>
+      )}
 
       {/* Permission notice modal */}
       {permissionNotice && (
@@ -914,23 +1032,23 @@ export function HomeworkView({ currentUser, onRequireLogin }: HomeworkViewProps)
             {/* Instruction description */}
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs text-slate-800 leading-relaxed space-y-1">
               <span className="font-bold text-slate-900">Hướng dẫn bài tập:</span>
-              <p className="whitespace-pre-line">{selectedHw.description}</p>
+              <p className="whitespace-pre-line"><FormulaText text={selectedHw.description} /></p>
             </div>
 
             {/* Questions list */}
             <div className="bg-amber-50/50 p-4 rounded-2xl border border-amber-200/80 space-y-3 text-xs sm:text-sm text-slate-800">
               <span className="font-black block text-amber-950 uppercase text-xs tracking-wider">
-                NỘI DUNG CÂU HỎI & BÀI TOÁN CẦN GIẢI:
+                NỘI DUNG CÂU HỎI & BÀI TOÁN CẦN GIẢI (SOẠN TRỰC TIẾP):
               </span>
               {selectedHw.questions.map((q, idx) => (
                 <div key={idx} className="p-3 bg-white rounded-xl border border-amber-200/80 leading-relaxed font-medium">
-                  {q}
+                  <FormulaText text={q} />
                 </div>
               ))}
             </div>
 
             {/* Teacher's Attached Assignment File */}
-            {(selectedHw.fileName || selectedHw.fileData) && (
+            {(selectedHw.fileName || selectedHw.fileData || selectedHw.fileType) && (
               <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
@@ -942,24 +1060,29 @@ export function HomeworkView({ currentUser, onRequireLogin }: HomeworkViewProps)
 
                 <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-blue-200">
                   <div className="text-xs font-semibold text-slate-800">
-                    {selectedHw.fileName || 'Tài liệu bài tập'}
+                    {selectedHw.fileName || 'Tài liệu bài tập đính kèm'}
                   </div>
-                  {selectedHw.fileData && (
-                    <a
-                      href={selectedHw.fileData}
-                      download={selectedHw.fileName || 'bai_tap_dinh_kem'}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                      <span>Tải về máy</span>
-                    </a>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadHomeworkFile(selectedHw)}
+                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Tải File Đề Bài Về Máy</span>
+                  </button>
                 </div>
 
                 {/* Preview image if fileType is image */}
                 {selectedHw.fileType === 'image' && selectedHw.fileData && (
-                  <div className="pt-2">
-                    <img src={selectedHw.fileData} alt="Xem trước đề bài" className="max-h-48 rounded-xl border border-blue-200 object-contain mx-auto bg-white" />
+                  <div 
+                    onClick={() => setLightboxImg({ url: selectedHw.fileData!, title: selectedHw.title })}
+                    className="pt-2 cursor-pointer group relative overflow-hidden rounded-xl"
+                    title="Nhấp để xem ảnh phóng to toàn màn hình"
+                  >
+                    <img src={selectedHw.fileData} alt="Xem trước đề bài" className="max-h-60 rounded-xl border border-blue-200 object-contain mx-auto bg-white transition-transform group-hover:scale-105" />
+                    <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition-opacity rounded-xl">
+                      <span>🔍 Nhấp để xem ảnh phóng to</span>
+                    </div>
                   </div>
                 )}
 
@@ -1079,6 +1202,19 @@ export function HomeworkView({ currentUser, onRequireLogin }: HomeworkViewProps)
                                 <span>{isGraded ? 'Sửa điểm' : 'Chấm bài'}</span>
                               </button>
                             )}
+
+                            {/* Nút Xóa bài nộp: dành cho Admin hoặc chính học sinh đã gửi bài */}
+                            {(isAdmin || (currentUser?.name && currentUser.name.trim().toLowerCase() === sub.studentName.trim().toLowerCase())) && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSubmission(selectedHw.id, sub.id)}
+                                className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-lg text-xs cursor-pointer border border-rose-200 transition-colors flex items-center gap-1"
+                                title="Xóa bài làm đã nộp này"
+                              >
+                                <Trash2 className="w-3 h-3 text-rose-600" />
+                                <span>Xóa bài</span>
+                              </button>
+                            )}
                           </div>
                         </div>
 
@@ -1123,9 +1259,16 @@ export function HomeworkView({ currentUser, onRequireLogin }: HomeworkViewProps)
                         )}
 
                         {/* Submission image preview if image */}
-                        {sub.fileType === 'image' && sub.fileData && (
-                          <div className="pt-1">
-                            <img src={sub.fileData} alt="Bài làm" className="max-h-48 rounded-xl border border-slate-200 object-contain bg-white" />
+                        {(sub.fileType === 'image' || Boolean(sub.fileName?.match(/\.(png|jpe?g|webp|gif|svg)$/i)) || sub.fileData?.startsWith('data:image/')) && sub.fileData && (
+                          <div 
+                            onClick={() => setLightboxImg({ url: sub.fileData!, title: `Ảnh bài làm của ${sub.studentName} (${sub.className})` })}
+                            className="pt-1 cursor-pointer group relative overflow-hidden rounded-xl inline-block"
+                            title="Nhấp để xem ảnh bài làm phóng to toàn màn hình"
+                          >
+                            <img src={sub.fileData} alt={`Bài làm của ${sub.studentName}`} className="max-h-60 rounded-xl border border-slate-200 object-contain bg-white transition-transform group-hover:scale-105" />
+                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition-opacity rounded-xl">
+                              <span>🔍 Nhấp để xem ảnh bài làm phóng to</span>
+                            </div>
                           </div>
                         )}
 
@@ -1771,6 +1914,14 @@ export function HomeworkView({ currentUser, onRequireLogin }: HomeworkViewProps)
           </div>
         </div>
       )}
+
+      {/* LIGHTBOX IMAGE VIEWER MODAL */}
+      <ImageViewerModal
+        isOpen={!!lightboxImg}
+        imageUrl={lightboxImg?.url || null}
+        title={lightboxImg?.title}
+        onClose={() => setLightboxImg(null)}
+      />
 
     </div>
   );

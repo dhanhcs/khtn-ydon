@@ -1,4 +1,5 @@
 import { Exam, LearningResource, StudentRecord, StudentSubmission, SystemConfig } from '../types';
+import { officialSchoolStudents } from './officialStudents';
 
 export const initialSystemConfig: SystemConfig = {
   appName: 'KHOA HỌC TỰ NHIÊN - Y ĐÔN',
@@ -18,25 +19,14 @@ export const initialSystemConfig: SystemConfig = {
   logoUrl: ''
 };
 
-export const sampleStudents: StudentRecord[] = [
-  { id: 'HS01', name: 'Đinh Thị Mai Lan', className: '8A', grade: 8, gender: 'Nữ' },
-  { id: 'HS02', name: 'Nguyễn Văn Tuấn', className: '8A', grade: 8, gender: 'Nam' },
-  { id: 'HS03', name: 'Rơ Châm H’Yên', className: '8A', grade: 8, gender: 'Nữ' },
-  { id: 'HS04', name: 'Trần Gia Huy', className: '8A', grade: 8, gender: 'Nam' },
-  { id: 'HS05', name: 'Lê Hoàng Yến', className: '8B', grade: 8, gender: 'Nữ' },
-  { id: 'HS06', name: 'Võ Minh Quân', className: '8B', grade: 8, gender: 'Nam' },
-  { id: 'HS07', name: 'Đinh H’Bích', className: '7A', grade: 7, gender: 'Nữ' },
-  { id: 'HS08', name: 'Nguyễn Tiến Đạt', className: '7A', grade: 7, gender: 'Nam' },
-  { id: 'HS09', name: 'Phạm Quỳnh Như', className: '9A', grade: 9, gender: 'Nữ' },
-  { id: 'HS10', name: 'Hoàng Quốc Việt', className: '9A', grade: 9, gender: 'Nam' },
-  { id: 'HS11', name: 'Ksor Thanh', className: '6A', grade: 6, gender: 'Nam' },
-  { id: 'HS12', name: 'Bùi Ánh Dương', className: '6A', grade: 6, gender: 'Nữ' }
-];
+// Danh sách học sinh chính thức trường THCS và THPT Y Đôn (243 học sinh đã tải lên)
+// Thầy cô nhập từ thực tế hoặc Tải lên từ file Excel danh sách lớp của nhà trường
+export const sampleStudents: StudentRecord[] = officialSchoolStudents;
 
-export const sampleExams: Exam[] = [
+const rawSampleExams: Exam[] = [
   {
     id: 'exam-phy-8-01',
-    title: 'KTTX Số 1 - Vật lí 8: Áp suất chất lỏng và Lực đẩy Archimedes',
+    title: 'Đề 1 - Vật lí 8: Áp suất chất lỏng và Lực đẩy Archimedes',
     subject: 'physics',
     grade: 8,
     durationMinutes: 15,
@@ -204,20 +194,23 @@ export const sampleExams: Exam[] = [
         ],
         explanation: 'a Đúng vì dviên bi > dnước; b Đúng: FA = 10000 * 20*10^-6 = 0.2N; c Sai vì V tràn = V bi = 20cm³; d Sai vì ddầu < dnước nên FA giảm.'
       },
-      // 1 Short answer (1.0 pt)
+      // 1 Short answer (1 câu, 2 chỗ điền số, mức vận dụng thấp, 1.0 điểm)
       {
         id: 'q18',
         type: 'short_answer',
-        question: 'Một khối gỗ hình hộp chữ nhật diện tích đáy S = 50 cm² nhúng chìm trong nước ở độ sâu cách mặt thoáng h = 0.4 m. Biết trọng lượng riêng của nước là d = 10000 N/m². Tính áp suất của nước tác dụng lên đáy khối gỗ theo đơn vị Pascal (chỉ nhập giá trị số)?',
-        acceptableAnswers: ['4000', '4000 Pa', '4.000'],
-        unit: 'Pa',
-        explanation: 'p = d.h = 10000 * 0.4 = 4000 Pa.'
+        question: 'Một khối gỗ hình hộp chữ nhật diện tích đáy S = 50 cm² nhúng chìm trong nước (d = 10 000 N/m³), đáy cách mặt thoáng h = 0.4 m. Cho khối lượng m = 1.2 kg (lấy g = 10 m/s²).\n(1) Tính áp suất của nước tác dụng lên đáy khối gỗ theo đơn vị Pascal (Pa)?\n(2) Tính trọng lượng của khối gỗ theo đơn vị Newton (N)?',
+        acceptableAnswers: ['4000', '12'],
+        blanks: [
+          { id: '1', label: 'Chỗ điền 1 (Áp suất p)', acceptableAnswers: ['4000', '4.000', '4000Pa', '4000 Pa'], unit: 'Pa', points: 0.5 },
+          { id: '2', label: 'Chỗ điền 2 (Trọng lượng P)', acceptableAnswers: ['12', '12N', '12 N'], unit: 'N', points: 0.5 }
+        ],
+        explanation: '- Chỗ điền 1: p = d * h = 10000 * 0.4 = 4000 Pa (0.5 điểm).\n- Chỗ điền 2: P = 10 * m = 10 * 1.2 = 12 N (0.5 điểm).'
       }
     ]
   },
   {
     id: 'exam-chem-8-01',
-    title: 'KTTX Số 1 - Hóa học 8: Phản ứng hóa học, Định luật bảo toàn khối lượng và Mol',
+    title: 'Đề 2 - Hóa học 8: Phản ứng hóa học, Định luật bảo toàn khối lượng và Mol',
     subject: 'chemistry',
     grade: 8,
     durationMinutes: 15,
@@ -361,16 +354,19 @@ export const sampleExams: Exam[] = [
       {
         id: 'c18',
         type: 'short_answer',
-        question: 'Hòa tan hoàn toàn 2,4 gam Magie (Mg, M=24) vào dung dịch axit Clohiđric (HCl) dư thu được muối MgCl₂ và khí H₂. Tính khối lượng khí H₂ (theo gam) sinh ra sau phản ứng (chỉ nhập số)?',
-        acceptableAnswers: ['0.2', '0,2', '0.2g', '0,2g'],
-        unit: 'gam',
-        explanation: 'nMg = 2.4/24 = 0.1 mol => nH₂ = 0.1 mol => mH₂ = 0.1 * 2 = 0.2 gam.'
+        question: 'Hòa tan hoàn toàn 2,4 gam Magie (Mg, M=24) vào dung dịch axit Clohiđric (HCl) dư theo phương trình: Mg + 2HCl → MgCl₂ + H₂↑.\n(1) Tính số mol khí H₂ sinh ra sau phản ứng (mol)?\n(2) Tính khối lượng muối MgCl₂ tạo thành theo gam (biết Mg=24, Cl=35.5)?',
+        acceptableAnswers: ['0.1', '9.5'],
+        blanks: [
+          { id: '1', label: 'Chỗ điền 1 (Số mol H₂)', acceptableAnswers: ['0.1', '0,1', '0.1mol', '0.1 mol'], unit: 'mol', points: 0.5 },
+          { id: '2', label: 'Chỗ điền 2 (Khối lượng MgCl₂)', acceptableAnswers: ['9.5', '9,5', '9.5g', '9.5 g'], unit: 'gam', points: 0.5 }
+        ],
+        explanation: '- Chỗ điền 1: nMg = 2.4 / 24 = 0.1 mol => nH₂ = 0.1 mol (0.5 điểm).\n- Chỗ điền 2: mMgCl₂ = 0.1 * 95 = 9.5 gam (0.5 điểm).'
       }
     ]
   },
   {
     id: 'exam-bio-8-01',
-    title: 'KTTX Số 1 - Sinh học 8: Khái quát cơ thể người, Hệ vận động và Hệ tuần hoàn',
+    title: 'Đề 3 - Sinh học 8: Khái quát cơ thể người, Hệ vận động và Hệ tuần hoàn',
     subject: 'biology',
     grade: 8,
     durationMinutes: 15,
@@ -521,101 +517,21 @@ export const sampleExams: Exam[] = [
       {
         id: 'b18',
         type: 'short_answer',
-        question: 'Một người khỏe mạnh lúc nghỉ ngơi có nhịp tim trung bình là 75 nhịp/phút. Hỏi mỗi chu kì co dãn của tim (gồm pha nhĩ co, thất co và pha dãn chung) kéo dài bao nhiêu giây (chỉ ghi số thập phân)?',
-        acceptableAnswers: ['0.8', '0,8', '0.8s', '0,8s'],
-        unit: 'giây',
-        explanation: 'Thời gian 1 chu kì tim = 60 / 75 = 0.8 giây.'
+        question: 'Một người khỏe mạnh lúc nghỉ ngơi có nhịp tim trung bình là 75 nhịp/phút. Mỗi lần co bóp tống máu, tâm thất tống được thể tích máu khoảng 70 mL.\n(1) Tính thời gian của một chu kì co dãn của tim (theo giây, viết số thập phân)?\n(2) Tính số pha hoạt động trong một chu kì tim?',
+        acceptableAnswers: ['0.8', '3'],
+        blanks: [
+          { id: '1', label: 'Chỗ điền 1 (Thời gian chu kì)', acceptableAnswers: ['0.8', '0,8', '0.8s', '0.8 giây'], unit: 'giây', points: 0.5 },
+          { id: '2', label: 'Chỗ điền 2 (Số pha chu kì tim)', acceptableAnswers: ['3', '3 pha', 'ba'], points: 0.5 }
+        ],
+        explanation: '- Chỗ điền 1: Thời gian 1 chu kì tim = 60 / 75 = 0.8 giây (0.5 điểm).\n- Chỗ điền 2: Gồm đúng 3 pha: pha nhĩ co, pha thất co và pha dãn chung (0.5 điểm).'
       }
     ]
   }
 ];
 
-export const sampleSubmissions: StudentSubmission[] = [
-  {
-    id: 'sub-01',
-    examId: 'exam-phy-8-01',
-    examTitle: 'KTTX Số 1 - Vật lí 8: Áp suất chất lỏng và Lực đẩy Archimedes',
-    subject: 'physics',
-    grade: 8,
-    studentName: 'Đinh Thị Mai Lan',
-    className: '8A',
-    startedAt: '2026-09-12 08:00:00',
-    submittedAt: '2026-09-12 08:12:45',
-    timeSpentSeconds: 765,
-    mcqScore: 8.0,
-    tfScore: 1.0,
-    saScore: 1.0,
-    totalScore: 10.0,
-    answers: {
-      mcq: { q1: 0, q2: 0, q3: 0, q4: 0, q5: 0, q6: 0, q7: 0, q8: 0, q9: 0, q10: 0, q11: 0, q12: 0, q13: 0, q14: 0, q15: 0, q16: 0 },
-      tf: { q17: { a: true, b: true, c: false, d: false } },
-      sa: { q18: '4000' }
-    }
-  },
-  {
-    id: 'sub-02',
-    examId: 'exam-chem-8-01',
-    examTitle: 'KTTX Số 1 - Hóa học 8: Phản ứng hóa học, Định luật bảo toàn khối lượng và Mol',
-    subject: 'chemistry',
-    grade: 8,
-    studentName: 'Nguyễn Văn Tuấn',
-    className: '8A',
-    startedAt: '2026-09-12 08:30:00',
-    submittedAt: '2026-09-12 08:44:10',
-    timeSpentSeconds: 850,
-    mcqScore: 7.5,
-    tfScore: 0.5,
-    saScore: 1.0,
-    totalScore: 9.0,
-    answers: {
-      mcq: { c1: 0, c2: 0, c3: 0, c4: 0, c5: 0, c6: 0, c7: 0, c8: 0, c9: 0, c10: 0, c11: 0, c12: 0, c13: 0, c14: 0, c15: 0, c16: 1 },
-      tf: { c17: { a: true, b: true, c: true, d: true } },
-      sa: { c18: '0.2' }
-    }
-  },
-  {
-    id: 'sub-03',
-    examId: 'exam-bio-8-01',
-    examTitle: 'KTTX Số 1 - Sinh học 8: Khái quát cơ thể người, Hệ vận động và Hệ tuần hoàn',
-    subject: 'biology',
-    grade: 8,
-    studentName: 'Rơ Châm H’Yên',
-    className: '8A',
-    startedAt: '2026-09-12 09:00:00',
-    submittedAt: '2026-09-12 09:13:30',
-    timeSpentSeconds: 810,
-    mcqScore: 8.0,
-    tfScore: 1.0,
-    saScore: 1.0,
-    totalScore: 10.0,
-    answers: {
-      mcq: { b1: 0, b2: 0, b3: 0, b4: 0, b5: 0, b6: 0, b7: 0, b8: 0, b9: 0, b10: 0, b11: 0, b12: 0, b13: 0, b14: 0, b15: 0, b16: 0 },
-      tf: { b17: { a: false, b: true, c: true, d: false } },
-      sa: { b18: '0.8' }
-    }
-  },
-  {
-    id: 'sub-04',
-    examId: 'exam-phy-8-01',
-    examTitle: 'KTTX Số 1 - Vật lí 8: Áp suất chất lỏng và Lực đẩy Archimedes',
-    subject: 'physics',
-    grade: 8,
-    studentName: 'Lê Hoàng Yến',
-    className: '8B',
-    startedAt: '2026-09-12 10:00:00',
-    submittedAt: '2026-09-12 10:14:05',
-    timeSpentSeconds: 845,
-    mcqScore: 7.0,
-    tfScore: 0.5,
-    saScore: 1.0,
-    totalScore: 8.5,
-    answers: {
-      mcq: { q1: 0, q2: 0, q3: 0, q4: 0, q5: 0, q6: 0, q7: 0, q8: 0, q9: 0, q10: 1, q11: 0, q12: 0, q13: 0, q14: 0, q15: 0, q16: 0 },
-      tf: { q17: { a: true, b: true, c: false, d: true } },
-      sa: { q18: '4000' }
-    }
-  }
-];
+export const sampleExams: Exam[] = rawSampleExams;
+
+export const sampleSubmissions: StudentSubmission[] = [];
 
 export const sampleLearningResources: LearningResource[] = [
   // 1. Góc học tập (Study Corner)
@@ -837,6 +753,86 @@ export const sampleLearningResources: LearningResource[] = [
     contentUrl: 'https://www.ncbionetwork.org/iet/microscope/',
     date: '2026-09-01'
   },
+  {
+    id: 'res-dt-04',
+    title: 'MolView - Khám phá cấu trúc hóa học và mô hình phân tử 3D tương tác',
+    subject: 'chemistry',
+    grade: 8,
+    category: 'digital_tools',
+    description: 'Vẽ công thức cấu tạo phân tử, xoay mô hình không gian 3D, tính toán phổ hồng ngoại và mật độ điện tích.',
+    contentUrl: 'https://molview.org/',
+    date: '2026-09-15'
+  },
+  {
+    id: 'res-dt-05',
+    title: 'GeoGebra KHTN - Mô phỏng quang học, chuyển động cơ học và đồ thị sóng',
+    subject: 'physics',
+    grade: 7,
+    category: 'digital_tools',
+    description: 'Công cụ trực quan hóa đường đi tia sáng qua thấu kính, gương cầu, chuyển động biến đổi đều và đồ thị vận tốc.',
+    contentUrl: 'https://www.geogebra.org/',
+    date: '2026-09-15'
+  },
+  {
+    id: 'res-dt-06',
+    title: 'BioDigital Human - Bản đồ giải phẫu 3D cơ thể người và hệ sinh học',
+    subject: 'biology',
+    grade: 8,
+    category: 'digital_tools',
+    description: 'Mô hình 3D tương tác các hệ cơ quan người: hệ tuần hoàn, tim, hệ hô hấp, tiêu hóa và thần kinh.',
+    contentUrl: 'https://human.biodigital.com/',
+    date: '2026-09-15'
+  },
+  {
+    id: 'res-dt-07',
+    title: 'Stellarium Web - Kính thiên văn trực tuyến khám phá bầu trời và hệ Mặt Trời',
+    subject: 'physics',
+    grade: 6,
+    category: 'digital_tools',
+    description: 'Quan sát các chòm sao, chuyển động Mặt Trời, Mặt Trăng, nhật thực, nguyệt thực và các hành tinh trong vũ trụ.',
+    contentUrl: 'https://stellarium-web.org/',
+    date: '2026-09-15'
+  },
+  {
+    id: 'res-dt-08',
+    title: 'Canva Giáo Dục - Thiết kế Infographic khoa học và sơ đồ tư duy chuyên nghiệp',
+    subject: 'physics',
+    grade: 8,
+    category: 'digital_tools',
+    description: 'Nền tảng thiết kế đồ họa giáo dục, tạo sơ đồ tư duy bài học, báo cáo dự án KHTN và áp phích khoa học.',
+    contentUrl: 'https://www.canva.com/education/',
+    date: '2026-09-15'
+  },
+  {
+    id: 'res-dt-09',
+    title: 'Padlet - Bảng số cộng tác và chia sẻ sản phẩm học tập trực tuyến',
+    subject: 'biology',
+    grade: 7,
+    category: 'digital_tools',
+    description: 'Không gian số để học sinh cùng thảo luận nhóm, nộp ảnh thực hành thí nghiệm và bình chọn sản phẩm số.',
+    contentUrl: 'https://padlet.com/',
+    date: '2026-09-15'
+  },
+  {
+    id: 'res-dt-10',
+    title: 'Quizizz - Luyện tập trắc nghiệm KHTN tương tác và ôn tập vui nhộn',
+    subject: 'chemistry',
+    grade: 8,
+    category: 'digital_tools',
+    description: 'Hệ thống câu hỏi trắc nghiệm tương tác gamification, thi đấu theo nhóm và củng cố kiến thức nhanh.',
+    contentUrl: 'https://quizizz.com/',
+    date: '2026-09-15'
+  },
+  {
+    id: 'res-dt-11',
+    title: 'Azota - Nền tảng giao bài tập, phiếu trả lời và chấm thi online',
+    subject: 'physics',
+    grade: 9,
+    category: 'digital_tools',
+    description: 'Ứng dụng hỗ trợ giao bài tập về nhà, chấm bài tự luận qua ảnh chụp và phiếu trắc nghiệm tự động.',
+    contentUrl: 'https://azota.vn/',
+    date: '2026-09-15'
+  },
   // 6. Học sinh giỏi (HSG Prep)
   {
     id: 'res-16',
@@ -877,10 +873,10 @@ export const schoolYearOptions = [
 ];
 
 export const schoolClasses = [
-  '6A1', '6A2', '6A3',
-  '7A1', '7A2', '7A3',
-  '8A1', '8A2', '8A3',
-  '9A1', '9A2', '9A3'
+  '6A', '6A1', '6A2', '6A3',
+  '7A', '7A1', '7A2', '7A3',
+  '8A', '8A1', '8A2', '8A3',
+  '9A', '9A1', '9A2', '9A3'
 ];
 
 export interface AdminAccountInfo {
@@ -891,9 +887,14 @@ export interface AdminAccountInfo {
 
 export const adminAccounts: AdminAccountInfo[] = [
   {
-    teacherName: 'Nguyễn Thị Cẩm Lệ',
+    teacherName: 'TT Trần Thị Phượng',
+    username: 'admin',
+    passwordHash: '555@ydon'
+  },
+  {
+    teacherName: 'Nguyễn Đình Hành',
     username: 'Admin',
-    passwordHash: '333@ydon'
+    passwordHash: '888@ydon'
   },
   {
     teacherName: 'Phạm Ngọc Tiến',
@@ -901,9 +902,9 @@ export const adminAccounts: AdminAccountInfo[] = [
     passwordHash: '666@ydon'
   },
   {
-    teacherName: 'Nguyễn Đình Hành',
+    teacherName: 'Nguyễn Thị Cẩm Lệ',
     username: 'Admin',
-    passwordHash: '888@ydon'
+    passwordHash: '333@ydon'
   },
   {
     teacherName: 'Đặng Thị Xuân Sang',
@@ -951,6 +952,565 @@ export const sampleExemplaryPosts = [
     date: '2026-09-05',
     author: 'Cô Đặng Thị Xuân Sang',
     category: 'good_student' as const
+  }
+];
+
+// Sample Interactive Lesson Exams for "Hướng dẫn soạn bài"
+export const sampleInteractiveLessonExams: import('../types').InteractiveLessonExam[] = [
+  {
+    id: 'lesson-exam-01',
+    lessonTitle: 'Bài 15: Áp suất chất lỏng - Lực đẩy Archimedes',
+    lessonCode: 'Bài 15',
+    title: 'Đề Tương Tác Nhóm: Bài 15 - Áp suất chất lỏng & Lực đẩy Archimedes',
+    subject: 'physics',
+    grade: 8,
+    durationMinutes: 10,
+    totalPoints: 10,
+    createdAt: '2026-10-10',
+    createdBy: 'Thầy Nguyễn Đình Hành',
+    questions: [
+      {
+        id: 'liq-q1',
+        type: 'multiple_choice',
+        question: 'Áp suất mà chất lỏng tác dụng lên đáy bình, thành bình và các vật trong lòng nó phụ thuộc vào yếu tố nào?',
+        options: [
+          'Trọng lượng riêng của chất lỏng và độ sâu tính từ mặt thoáng',
+          'Khối lượng của bình chứa chất lỏng',
+          'Hình dạng của bình chứa chất lỏng',
+          'Diện tích bề mặt thoáng của chất lỏng'
+        ],
+        correctAnswer: 0,
+        explanation: 'Công thức p = d . h cho thấy áp suất phụ thuộc vào trọng lượng riêng d và độ sâu h.'
+      },
+      {
+        id: 'liq-q2',
+        type: 'multiple_choice',
+        question: 'Công thức tính lực đẩy Archimedes tác dụng lên một vật nhúng chìm trong chất lỏng là:',
+        options: ['F_A = d . V', 'F_A = p . S', 'F_A = m . g', 'F_A = d / V'],
+        correctAnswer: 0,
+        explanation: 'F_A = d . V, trong đó d là trọng lượng riêng chất lỏng, V là thể tích phần chất lỏng bị chiếm chỗ.'
+      },
+      {
+        id: 'liq-q3',
+        type: 'multiple_choice',
+        question: 'Khi thả một vật vào trong nước, vật sẽ chìm xuống khi nào?',
+        options: [
+          'Trọng lượng P của vật lớn hơn lực đẩy Archimedes F_A (P > F_A)',
+          'Trọng lượng P của vật nhỏ hơn lực đẩy Archimedes F_A (P < F_A)',
+          'Trọng lượng P của vật bằng lực đẩy Archimedes F_A (P = F_A)',
+          'Khối lượng riêng của vật nhỏ hơn khối lượng riêng của nước'
+        ],
+        correctAnswer: 0,
+        explanation: 'Vật chìm khi P > F_A (tương đương d_vật > d_chất lỏng).'
+      },
+      {
+        id: 'liq-q4',
+        type: 'multiple_choice',
+        question: 'Tại sao kim khâu làm bằng sắt thả xuống nước thì chìm, nhưng con tàu lớn làm bằng thép nặng hàng nghìn tấn lại nổi được trên mặt biển?',
+        options: [
+          'Vì con tàu có cấu tạo rỗng nên thể tích V chiếm chỗ rất lớn, làm lực đẩy Archimedes lớn hơn trọng lượng',
+          'Vì nước biển có mật độ loãng hơn nước ngọt',
+          'Vì thép chế tạo tàu nhẹ hơn sắt làm kim',
+          'Vì động cơ đẩy con tàu nổi lên'
+        ],
+        correctAnswer: 0,
+        explanation: 'Tàu rỗng có thể tích chiếm chỗ rất lớn nên F_A = d.V đủ lớn để nâng trọng lượng tàu.'
+      },
+      {
+        id: 'liq-q5',
+        type: 'multiple_choice',
+        question: 'Trong bình thông nhau chứa cùng một chất lỏng đứng yên, mực mặt thoáng của chất lỏng ở các nhánh luôn:',
+        options: [
+          'Ở cùng một độ cao',
+          'Nhánh to hơn có mực nước cao hơn',
+          'Nhánh nhỏ hơn có mực nước cao hơn',
+          'Phụ thuộc vào hình dạng miệng bình'
+        ],
+        correctAnswer: 0,
+        explanation: 'Nguyên lý bình thông nhau: mực chất lỏng ở các nhánh luôn ngang bằng nhau.'
+      },
+      {
+        id: 'liq-q6',
+        type: 'multiple_choice',
+        question: 'Một thỏi nhôm và một thỏi đồng có cùng thể tích nhúng ngập hoàn toàn trong cùng một cốc nước. Lực đẩy Archimedes tác dụng lên thỏi nào lớn hơn?',
+        options: [
+          'Lực đẩy Archimedes tác dụng lên hai thỏi như nhau',
+          'Lực đẩy tác dụng lên thỏi đồng lớn hơn',
+          'Lực đẩy tác dụng lên thỏi nhôm lớn hơn',
+          'Không so sánh được vì khối lượng riêng khác nhau'
+        ],
+        correctAnswer: 0,
+        explanation: 'Vì thể tích V bằng nhau và cùng nhúng trong nước (d bằng nhau) nên F_A = d.V là như nhau.'
+      },
+      {
+        id: 'liq-q7',
+        type: 'multiple_choice',
+        question: 'Một người thợ lặn càng lặn sâu xuống đáy biển thì áp suất nước biển tác dụng lên cơ thể người đó thay đổi như thế nào?',
+        options: [
+          'Càng tăng lên do độ sâu h tăng',
+          'Càng giảm đi do trọng lực giảm',
+          'Không thay đổi vì trọng lượng riêng nước biển giữ nguyên',
+          'Tăng giảm bất thường tùy thời tiết'
+        ],
+        correctAnswer: 0,
+        explanation: 'Theo công thức p = d . h, khi độ sâu h tăng thì áp suất p tăng tỉ lệ thuận.'
+      },
+      {
+        id: 'liq-q8',
+        type: 'multiple_choice',
+        question: 'Ứng dụng nào sau đây KHÔNG dựa trên nguyên lý bình thông nhau?',
+        options: [
+          'Ống hút sữa khi hút chân không',
+          'Ấm pha trà có vòi và thân thông nhau',
+          'Ống đo mực nước ở nồi hơi công nghiệp',
+          'Kích thủy lực nâng xe ô tô'
+        ],
+        correctAnswer: 0,
+        explanation: 'Hút sữa dựa trên tác dụng của áp suất khí quyển, không phải bình thông nhau.'
+      },
+      {
+        id: 'liq-q9',
+        type: 'multiple_choice',
+        question: 'Khi treo một quả cầu kim loại vào lực kế ở ngoài không khí thì lực kế chỉ 5 N. Nhúng chìm quả cầu vào nước thì lực kế chỉ 3,5 N. Lực đẩy Archimedes của nước tác dụng lên quả cầu là:',
+        options: ['1,5 N', '8,5 N', '5,0 N', '3,5 N'],
+        correctAnswer: 0,
+        explanation: 'F_A = P_ngoài - P_trong = 5 N - 3,5 N = 1,5 N.'
+      },
+      {
+        id: 'liq-q10',
+        type: 'multiple_choice',
+        question: 'Để tăng áp suất chất lỏng tại một điểm dưới đáy hồ, biện pháp đơn giản nhất là:',
+        options: [
+          'Tăng mực nước trong hồ để tăng độ sâu h',
+          'Mở rộng diện tích đáy hồ',
+          'Thu hẹp miệng hồ',
+          'Lắp thêm bè nổi trên mặt hồ'
+        ],
+        correctAnswer: 0,
+        explanation: 'Áp suất p = d.h, tăng độ cao mực nước làm tăng h, từ đó tăng p tại đáy.'
+      }
+    ]
+  },
+  {
+    id: 'lesson-exam-02',
+    lessonTitle: 'Bài 8: Tốc độ phản ứng hóa học và chất xúc tác',
+    lessonCode: 'Bài 8',
+    title: 'Đề Tương Tác Nhóm: Bài 8 - Tốc độ phản ứng & Chất xúc tác',
+    subject: 'chemistry',
+    grade: 8,
+    durationMinutes: 10,
+    totalPoints: 10,
+    createdAt: '2026-10-09',
+    createdBy: 'Cô Nguyễn Thị Cẩm Lệ',
+    questions: [
+      {
+        id: 'chem-q1',
+        type: 'multiple_choice',
+        question: 'Yếu tố nào sau đây KHÔNG làm tăng tốc độ của một phản ứng hóa học?',
+        options: [
+          'Tăng thể tích của bình chứa khí mà không thay đổi lượng chất',
+          'Tăng nhiệt độ của môi trường phản ứng',
+          'Tăng nồng độ các chất tham gia phản ứng',
+          'Tăng diện tích bề mặt tiếp xúc của chất rắn'
+        ],
+        correctAnswer: 0,
+        explanation: 'Tăng thể tích bình làm giảm nồng độ chất phản ứng khí, dẫn đến giảm tốc độ phản ứng.'
+      },
+      {
+        id: 'chem-q2',
+        type: 'multiple_choice',
+        question: 'Chất xúc tác là chất có đặc điểm nào sau đây?',
+        options: [
+          'Làm tăng tốc độ phản ứng nhưng không bị biến đổi về lượng và chất sau phản ứng',
+          'Làm giảm tốc độ phản ứng và bị tiêu hao dần',
+          'Làm tăng khối lượng sản phẩm tạo thành',
+          'Là chất tham gia phản ứng và chuyển hóa hoàn toàn thành sản phẩm mới'
+        ],
+        correctAnswer: 0,
+        explanation: 'Chất xúc tác làm tăng tốc độ phản ứng mà không bị tiêu hao sau phản ứng.'
+      },
+      {
+        id: 'chem-q3',
+        type: 'multiple_choice',
+        question: 'Khi bảo quản thực phẩm trong tủ lạnh, nhiệt độ thấp giúp thực phẩm lâu ôi thiu vì nguyên nhân nào?',
+        options: [
+          'Nhiệt độ thấp làm giảm tốc độ các phản ứng sinh hóa phân hủy thực phẩm',
+          'Nhiệt độ thấp làm tăng nồng độ chất bảo quản',
+          'Nhiệt độ thấp loại bỏ hoàn toàn vi khuẩn',
+          'Nhiệt độ thấp làm giảm diện tích tiếp xúc thực phẩm'
+        ],
+        correctAnswer: 0,
+        explanation: 'Giảm nhiệt độ làm giảm tốc độ phản ứng phân hủy của vi sinh vật.'
+      },
+      {
+        id: 'chem-q4',
+        type: 'multiple_choice',
+        question: 'Để củi nhanh cháy bốc lửa to khi nhóm lửa cắm trại, ta nên:',
+        options: [
+          'Chẻ nhỏ củi và thổi thêm không khí vào bếp',
+          'Dùng khúc gỗ thật to và đậy kín nắp bếp',
+          'Tưới thêm nước lạnh lên bề mặt củi',
+          'Nén củi thật chặt vào nhau'
+        ],
+        correctAnswer: 0,
+        explanation: 'Chẻ nhỏ củi làm tăng diện tích tiếp xúc, thổi không khí làm tăng nồng độ oxygen.'
+      },
+      {
+        id: 'chem-q5',
+        type: 'multiple_choice',
+        question: 'Men tiêu hóa (enzyme) trong cơ thể sinh vật đóng vai trò là:',
+        options: [
+          'Chất xúc tác sinh học',
+          'Chất ức chế phản ứng',
+          'Nguồn cung cấp nhiệt lượng duy nhất',
+          'Chất chỉ thị màu'
+        ],
+        correctAnswer: 0,
+        explanation: 'Enzyme là các chất xúc tác sinh học thúc đẩy các quá trình chuyển hóa trong cơ thể.'
+      },
+      {
+        id: 'chem-q6',
+        type: 'multiple_choice',
+        question: 'Khi đun nước bằng ấm nhôm, đáy ấm có một lớp cặn vôi (CaCO3). Dùng giấm ăn đun nóng cặn tan nhanh hơn dùng nước ấm vì:',
+        options: [
+          'Giấm ăn chứa acetic acid tác dụng hóa học hòa tan cặn vôi',
+          'Nước ấm làm nguội nhanh hơn',
+          'Giấm ăn làm tăng độ bền của nhôm',
+          'Nước làm cặn vôi đóng bánh cứng hơn'
+        ],
+        correctAnswer: 0,
+        explanation: 'Acid trong giấm phản ứng với CaCO3 tạo muối tan và khí CO2 thoát ra.'
+      },
+      {
+        id: 'chem-q7',
+        type: 'multiple_choice',
+        question: 'Trong phòng thí nghiệm, phản ứng phân hủy hydrogen peroxide (H2O2) giải phóng khí oxygen nhanh hơn rất nhiều khi thêm một lượng nhỏ chất bột màu đen nào?',
+        options: ['Manganese dioxide (MnO2)', 'Than hoa (C)', 'Đồng kim loại (Cu)', 'Muối ăn (NaCl)'],
+        correctAnswer: 0,
+        explanation: 'MnO2 đóng vai trò là chất xúc tác cho phản ứng phân hủy H2O2 thành H2O và O2.'
+      },
+      {
+        id: 'chem-q8',
+        type: 'multiple_choice',
+        question: 'Nồi áp suất giúp ninh xương, nấu cháo nhanh nhừ hơn nồi thường chủ yếu do yếu tố nào?',
+        options: [
+          'Áp suất cao làm tăng nhiệt độ sôi của nước (trên 100°C), làm tăng tốc độ phản ứng',
+          'Nồi áp suất làm giảm diện tích tiếp xúc của thực phẩm',
+          'Nồi áp suất làm giảm nồng độ oxy',
+          'Chất xúc tác kim loại trong thành nồi'
+        ],
+        correctAnswer: 0,
+        explanation: 'Áp suất cao làm nước sôi ở nhiệt độ cao hơn 100°C, nhiệt độ cao làm thức ăn nhanh chín mềm.'
+      },
+      {
+        id: 'chem-q9',
+        type: 'multiple_choice',
+        question: 'Viên sủi vitamin C tan và sủi bọt trong nước nóng nhanh hơn trong nước đá là do ảnh hưởng của yếu tố nào?',
+        options: ['Nhiệt độ', 'Nồng độ', 'Chất xúc tác', 'Khối lượng viên sủi'],
+        correctAnswer: 0,
+        explanation: 'Nhiệt độ cao làm các hạt chuyển động nhanh hơn, va chạm hiệu quả tăng nên tốc độ tan và phản ứng nhanh hơn.'
+      },
+      {
+        id: 'chem-q10',
+        type: 'multiple_choice',
+        question: 'Tốc độ phản ứng là đại lượng đặc trưng cho:',
+        options: [
+          'Mức độ nhanh hay chậm của một phản ứng hóa học',
+          'Màu sắc của các chất tham gia phản ứng',
+          'Khối lượng chất tham gia ban đầu',
+          'Thể tích chất khí thu được cuối cùng'
+        ],
+        correctAnswer: 0,
+        explanation: 'Tốc độ phản ứng đo lường sự biến thiên nồng độ chất phản ứng hoặc sản phẩm theo thời gian.'
+      }
+    ]
+  },
+  {
+    id: 'lesson-exam-03',
+    lessonTitle: 'Bài 12: Ánh sáng và sự truyền ánh sáng',
+    lessonCode: 'Bài 12',
+    title: 'Đề Tương Tác Nhóm: Bài 12 - Ánh sáng & Sự truyền ánh sáng',
+    subject: 'physics',
+    grade: 7,
+    durationMinutes: 10,
+    totalPoints: 10,
+    createdAt: '2026-10-08',
+    createdBy: 'Thầy Nguyễn Đình Hành',
+    questions: [
+      {
+        id: 'light-q1',
+        type: 'multiple_choice',
+        question: 'Định luật truyền thẳng của ánh sáng phát biểu rằng trong môi trường trong suốt và đồng tính:',
+        options: [
+          'Ánh sáng truyền đi theo đường thẳng',
+          'Ánh sáng truyền đi theo đường cong parabol',
+          'Ánh sáng truyền đi theo đường gấp khúc',
+          'Ánh sáng lan tỏa hỗn loạn không có quy luật'
+        ],
+        correctAnswer: 0,
+        explanation: 'Định luật: Trong môi trường trong suốt và đồng tính, ánh sáng truyền đi theo đường thẳng.'
+      },
+      {
+        id: 'light-q2',
+        type: 'multiple_choice',
+        question: 'Vật nào sau đây được gọi là nguồn sáng?',
+        options: [
+          'Mặt Trời',
+          'Mặt Trăng trong đêm rằm',
+          'Gương phẳng phản chiếu ánh đèn',
+          'Trang sách được chiếu sáng'
+        ],
+        correctAnswer: 0,
+        explanation: 'Nguồn sáng là vật tự nó phát ra ánh sáng (như Mặt Trời, ngọn nến đang cháy, bóng đèn sáng).'
+      },
+      {
+        id: 'light-q3',
+        type: 'multiple_choice',
+        question: 'Hiện tượng nhật thực xảy ra khi:',
+        options: [
+          'Mặt Trăng nằm ở khoảng giữa Mặt Trời và Trái Đất',
+          'Trái Đất nằm ở khoảng giữa Mặt Trời và Mặt Trăng',
+          'Mặt Trời nằm ở khoảng giữa Trái Đất và Mặt Trăng',
+          'Mặt Trăng đi vào vùng tối của Trái Đất'
+        ],
+        correctAnswer: 0,
+        explanation: 'Nhật thực xảy ra khi Mặt Trăng che khuất một phần hoặc toàn bộ Mặt Trời nhìn từ Trái Đất.'
+      },
+      {
+        id: 'light-q4',
+        type: 'multiple_choice',
+        question: 'Tia sáng được biểu diễn bằng:',
+        options: [
+          'Một đường thẳng có mũi tên chỉ hướng truyền của ánh sáng',
+          'Một đường cong uốn lượn',
+          'Một chấm tròn màu sáng',
+          'Hai đường thẳng song song không có mũi tên'
+        ],
+        correctAnswer: 0,
+        explanation: 'Tia sáng được quy ước vẽ bằng đường thẳng có mũi tên chỉ chiều truyền ánh sáng.'
+      },
+      {
+        id: 'light-q5',
+        type: 'multiple_choice',
+        question: 'Bóng tối ở phía sau vật cản sáng xuất hiện là do:',
+        options: [
+          'Ánh sáng truyền theo đường thẳng nên không đi vòng qua vật cản được',
+          'Vật cản hút hết ánh sáng',
+          'Mắt người không nhận biết được ánh sáng yếu',
+          'Ánh sáng bị đổi màu đen khi chạm vào vật cản'
+        ],
+        correctAnswer: 0,
+        explanation: 'Do ánh sáng truyền thẳng, phần phía sau vật cản không nhận được ánh sáng từ nguồn sáng truyền tới.'
+      },
+      {
+        id: 'light-q6',
+        type: 'multiple_choice',
+        question: 'Khi đặt một vật cản trước một nguồn sáng hẹp (nguồn sáng điểm), phía sau vật cản sẽ xuất hiện:',
+        options: [
+          'Vùng bóng tối rõ nét',
+          'Vùng bóng nửa tối rất rộng không có bóng tối',
+          'Nhiều vệt sáng màu cầu vồng',
+          'Không có bóng nào cả'
+        ],
+        correctAnswer: 0,
+        explanation: 'Nguồn sáng hẹp tạo ra vùng bóng tối sắc nét phía sau vật cản.'
+      },
+      {
+        id: 'light-q7',
+        type: 'multiple_choice',
+        question: 'Vận tốc truyền ánh sáng trong chân không có giá trị xấp xỉ bằng bao nhiêu?',
+        options: ['300.000 km/s', '340 m/s', '3.000 km/s', '1.000.000 km/h'],
+        correctAnswer: 0,
+        explanation: 'Vận tốc ánh sáng trong chân không là c ≈ 3 . 10^8 m/s = 300.000 km/s.'
+      },
+      {
+        id: 'light-q8',
+        type: 'multiple_choice',
+        question: 'Chùm sáng song song là chùm sáng gồm các tia sáng:',
+        options: [
+          'Song song với nhau trên đường truyền',
+          'Giao nhau tại một điểm',
+          'Loe rộng ra trên đường truyền',
+          'Xoắn tròn quanh một trục'
+        ],
+        correctAnswer: 0,
+        explanation: 'Chùm song song gồm các tia sáng song song với nhau (ví dụ chùm sáng từ Mặt Trời tới Trái Đất).'
+      },
+      {
+        id: 'light-q9',
+        type: 'multiple_choice',
+        question: 'Tại sao trong các phòng mổ bệnh viện, người ta thường dùng đèn mổ gồm nhiều bóng đèn nhỏ xếp thành hình vòm?',
+        options: [
+          'Để hạn chế tối đa bóng tối và bóng nửa tối do tay bác sĩ che khuất',
+          'Để cho căn phòng ấm hơn',
+          'Để bác sĩ nhìn thấy màu sắc sặc sỡ hơn',
+          'Để tiết kiệm điện năng tiêu thụ'
+        ],
+        correctAnswer: 0,
+        explanation: 'Đèn chùm nhiều bóng tạo nguồn sáng rộng triệt tiêu vùng bóng tối tại vị trí phẫu thuật.'
+      },
+      {
+        id: 'light-q10',
+        type: 'multiple_choice',
+        question: 'Hiện tượng nguyệt thực thường xảy ra vào thời điểm nào trong tháng âm lịch?',
+        options: [
+          'Đêm rằm (ngày 15 âm lịch) khi Trái Đất nằm giữa Mặt Trời và Mặt Trăng',
+          'Đầu tháng (mùng 1 âm lịch)',
+          'Ngày 23 tháng chạp',
+          'Bất kỳ ngày nào trong tháng'
+        ],
+        correctAnswer: 0,
+        explanation: 'Nguyệt thực xảy ra khi Trái Đất che ánh sáng Mặt Trời chiếu tới Mặt Trăng, vào ngày rằm trăng tròn.'
+      }
+    ]
+  }
+];
+
+// Sample Group Submissions (Nhóm 1 to 8) for Interactive Lesson Exams
+export const sampleGroupSubmissions: import('../types').GroupSubmission[] = [
+  {
+    id: 'grp-sub-01',
+    examId: 'lesson-exam-01',
+    examTitle: 'Đề Tương Tác Nhóm: Bài 15 - Áp suất chất lỏng & Lực đẩy Archimedes',
+    lessonTitle: 'Bài 15: Áp suất chất lỏng - Lực đẩy Archimedes',
+    groupNumber: 1,
+    groupName: 'Nhóm 1',
+    className: '8A1',
+    leaderName: 'Đinh Thị Mai Lan',
+    membersNote: 'Mai Lan, Quốc Bảo, Thảo My, Đức Trọng',
+    submittedAt: '2026-10-11 08:35:12',
+    timeSpentSeconds: 380,
+    totalScore: 10.0,
+    trophy: 'gold',
+    correctCount: 10,
+    totalQuestions: 10,
+    answers: { 'liq-q1': 0, 'liq-q2': 0, 'liq-q3': 0, 'liq-q4': 0, 'liq-q5': 0, 'liq-q6': 0, 'liq-q7': 0, 'liq-q8': 0, 'liq-q9': 0, 'liq-q10': 0 }
+  },
+  {
+    id: 'grp-sub-02',
+    examId: 'lesson-exam-01',
+    examTitle: 'Đề Tương Tác Nhóm: Bài 15 - Áp suất chất lỏng & Lực đẩy Archimedes',
+    lessonTitle: 'Bài 15: Áp suất chất lỏng - Lực đẩy Archimedes',
+    groupNumber: 2,
+    groupName: 'Nhóm 2',
+    className: '8A1',
+    leaderName: 'Trần Gia Huy',
+    membersNote: 'Gia Huy, Hồng Nhung, Minh Khôi, Hải Đăng',
+    submittedAt: '2026-10-11 08:36:45',
+    timeSpentSeconds: 420,
+    totalScore: 9.0,
+    trophy: 'gold',
+    correctCount: 9,
+    totalQuestions: 10,
+    answers: { 'liq-q1': 0, 'liq-q2': 0, 'liq-q3': 0, 'liq-q4': 0, 'liq-q5': 0, 'liq-q6': 0, 'liq-q7': 0, 'liq-q8': 1, 'liq-q9': 0, 'liq-q10': 0 }
+  },
+  {
+    id: 'grp-sub-03',
+    examId: 'lesson-exam-01',
+    examTitle: 'Đề Tương Tác Nhóm: Bài 15 - Áp suất chất lỏng & Lực đẩy Archimedes',
+    lessonTitle: 'Bài 15: Áp suất chất lỏng - Lực đẩy Archimedes',
+    groupNumber: 3,
+    groupName: 'Nhóm 3',
+    className: '8A1',
+    leaderName: 'Rơ Châm H’Yên',
+    membersNote: 'H’Yên, Văn Nam, Tuấn Kiệt, Phương Anh',
+    submittedAt: '2026-10-11 08:37:20',
+    timeSpentSeconds: 460,
+    totalScore: 8.0,
+    trophy: 'silver',
+    correctCount: 8,
+    totalQuestions: 10,
+    answers: { 'liq-q1': 0, 'liq-q2': 0, 'liq-q3': 0, 'liq-q4': 0, 'liq-q5': 1, 'liq-q6': 0, 'liq-q7': 0, 'liq-q8': 1, 'liq-q9': 0, 'liq-q10': 0 }
+  },
+  {
+    id: 'grp-sub-04',
+    examId: 'lesson-exam-01',
+    examTitle: 'Đề Tương Tác Nhóm: Bài 15 - Áp suất chất lỏng & Lực đẩy Archimedes',
+    lessonTitle: 'Bài 15: Áp suất chất lỏng - Lực đẩy Archimedes',
+    groupNumber: 4,
+    groupName: 'Nhóm 4',
+    className: '8A1',
+    leaderName: 'Đặng Tuấn Anh',
+    membersNote: 'Tuấn Anh, Quỳnh Trang, Duy Hưng, Cẩm Tú',
+    submittedAt: '2026-10-11 08:38:05',
+    timeSpentSeconds: 500,
+    totalScore: 8.0,
+    trophy: 'silver',
+    correctCount: 8,
+    totalQuestions: 10,
+    answers: { 'liq-q1': 0, 'liq-q2': 0, 'liq-q3': 0, 'liq-q4': 1, 'liq-q5': 0, 'liq-q6': 0, 'liq-q7': 0, 'liq-q8': 0, 'liq-q9': 1, 'liq-q10': 0 }
+  },
+  {
+    id: 'grp-sub-05',
+    examId: 'lesson-exam-01',
+    examTitle: 'Đề Tương Tác Nhóm: Bài 15 - Áp suất chất lỏng & Lực đẩy Archimedes',
+    lessonTitle: 'Bài 15: Áp suất chất lỏng - Lực đẩy Archimedes',
+    groupNumber: 5,
+    groupName: 'Nhóm 5',
+    className: '8A1',
+    leaderName: 'Nguyễn Bích Ngọc',
+    membersNote: 'Bích Ngọc, Hoàng Long, Anh Thư, Thành Đạt',
+    submittedAt: '2026-10-11 08:39:10',
+    timeSpentSeconds: 520,
+    totalScore: 7.0,
+    trophy: 'silver',
+    correctCount: 7,
+    totalQuestions: 10,
+    answers: { 'liq-q1': 0, 'liq-q2': 0, 'liq-q3': 1, 'liq-q4': 0, 'liq-q5': 0, 'liq-q6': 1, 'liq-q7': 0, 'liq-q8': 1, 'liq-q9': 0, 'liq-q10': 0 }
+  },
+  {
+    id: 'grp-sub-06',
+    examId: 'lesson-exam-01',
+    examTitle: 'Đề Tương Tác Nhóm: Bài 15 - Áp suất chất lỏng & Lực đẩy Archimedes',
+    lessonTitle: 'Bài 15: Áp suất chất lỏng - Lực đẩy Archimedes',
+    groupNumber: 6,
+    groupName: 'Nhóm 6',
+    className: '8A1',
+    leaderName: 'Lê Hoàng Yến',
+    membersNote: 'Hoàng Yến, Việt Dũng, Khánh Linh, Minh Quân',
+    submittedAt: '2026-10-11 08:39:55',
+    timeSpentSeconds: 540,
+    totalScore: 7.0,
+    trophy: 'silver',
+    correctCount: 7,
+    totalQuestions: 10,
+    answers: { 'liq-q1': 0, 'liq-q2': 1, 'liq-q3': 0, 'liq-q4': 0, 'liq-q5': 0, 'liq-q6': 0, 'liq-q7': 1, 'liq-q8': 0, 'liq-q9': 1, 'liq-q10': 0 }
+  },
+  {
+    id: 'grp-sub-07',
+    examId: 'lesson-exam-01',
+    examTitle: 'Đề Tương Tác Nhóm: Bài 15 - Áp suất chất lỏng & Lực đẩy Archimedes',
+    lessonTitle: 'Bài 15: Áp suất chất lỏng - Lực đẩy Archimedes',
+    groupNumber: 7,
+    groupName: 'Nhóm 7',
+    className: '8A1',
+    leaderName: 'Vũ Đức Thịnh',
+    membersNote: 'Đức Thịnh, Kim Ngân, Quốc Trung, Mai Anh',
+    submittedAt: '2026-10-11 08:40:15',
+    timeSpentSeconds: 560,
+    totalScore: 6.0,
+    trophy: 'bronze',
+    correctCount: 6,
+    totalQuestions: 10,
+    answers: { 'liq-q1': 0, 'liq-q2': 0, 'liq-q3': 1, 'liq-q4': 1, 'liq-q5': 0, 'liq-q6': 0, 'liq-q7': 0, 'liq-q8': 1, 'liq-q9': 1, 'liq-q10': 0 }
+  },
+  {
+    id: 'grp-sub-08',
+    examId: 'lesson-exam-01',
+    examTitle: 'Đề Tương Tác Nhóm: Bài 15 - Áp suất chất lỏng & Lực đẩy Archimedes',
+    lessonTitle: 'Bài 15: Áp suất chất lỏng - Lực đẩy Archimedes',
+    groupNumber: 8,
+    groupName: 'Nhóm 8',
+    className: '8A1',
+    leaderName: 'Ksor H’Dịu',
+    membersNote: 'H’Dịu, Tấn Phát, Ngọc Hân, Bảo Châu',
+    submittedAt: '2026-10-11 08:41:00',
+    timeSpentSeconds: 580,
+    totalScore: 6.0,
+    trophy: 'bronze',
+    correctCount: 6,
+    totalQuestions: 10,
+    answers: { 'liq-q1': 1, 'liq-q2': 0, 'liq-q3': 0, 'liq-q4': 0, 'liq-q5': 1, 'liq-q6': 1, 'liq-q7': 0, 'liq-q8': 0, 'liq-q9': 1, 'liq-q10': 0 }
   }
 ];
 

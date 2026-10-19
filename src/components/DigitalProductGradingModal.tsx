@@ -10,6 +10,7 @@ import {
   UserCheck
 } from 'lucide-react';
 import { DigitalProductGrading, LearningResource, UserSession } from '../types';
+import { isTeacherAdmin } from '../utils/permissionUtils';
 
 interface DigitalProductGradingModalProps {
   resource: LearningResource;
@@ -45,8 +46,8 @@ export function DigitalProductGradingModal({
 
   if (!isOpen) return null;
 
-  // Check if current user is admin
-  const isAdmin = currentUser?.role === 'admin';
+  // Check if current user is teacher admin (Admin)
+  const isAdmin = isTeacherAdmin(currentUser);
 
   // Check matching subject permission
   const userAdminSubject = currentUser?.adminSubject;
@@ -134,6 +135,31 @@ export function DigitalProductGradingModal({
             <span>
               Xác thực: <strong>{currentUser?.adminName || currentUser?.name}</strong> - Quản trị phân môn <strong>{subjectLabel}</strong>.
             </span>
+          </div>
+        )}
+
+        {/* Product Preview (Ảnh sản phẩm số / Link liên kết) */}
+        {resource.fileData && (resource.fileType === 'image' || resource.fileData.startsWith('data:image/')) && (
+          <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-center">
+            <span className="block text-[11px] font-bold text-slate-700 mb-1.5">Ảnh sản phẩm số của học sinh (xem trực tiếp):</span>
+            <img 
+              src={resource.fileData} 
+              alt={resource.title} 
+              className="max-h-56 mx-auto rounded-xl border border-slate-300 object-contain shadow-xs bg-white" 
+            />
+          </div>
+        )}
+        {resource.contentUrl && (
+          <div className="p-2.5 bg-blue-50/70 border border-blue-200 rounded-xl flex items-center justify-between gap-2 text-xs">
+            <span className="text-blue-900 font-semibold truncate text-[11px]">🔗 Link sản phẩm: {resource.contentUrl}</span>
+            <a 
+              href={resource.contentUrl} 
+              target="_blank" 
+              rel="noopener noreferrer" 
+              className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-bold shrink-0"
+            >
+              Mở link
+            </a>
           </div>
         )}
 

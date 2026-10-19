@@ -8,7 +8,10 @@ import {
   GraduationCap, 
   Award,
   ChevronRight,
-  ClipboardList
+  ClipboardList,
+  Sparkles,
+  GitFork,
+  Globe
 } from 'lucide-react';
 
 interface StudentTasksMenuProps {
@@ -113,6 +116,39 @@ export function StudentTasksMenu({
       boxText: 'text-rose-950',
       iconBg: 'bg-rose-600 text-white',
       chevronColor: 'text-rose-400'
+    },
+    {
+      id: 'ai_assistant',
+      title: 'Trợ lý AI Gemini',
+      sub: 'Chatbot KHTN & Biến văn bản thành ảnh',
+      icon: Sparkles,
+      // 9. Fuchsia / Purple gradient theme
+      boxBorder: 'border-fuchsia-400 bg-white',
+      boxText: 'text-fuchsia-950',
+      iconBg: 'bg-gradient-to-tr from-fuchsia-600 to-indigo-600 text-white',
+      chevronColor: 'text-fuchsia-400'
+    },
+    {
+      id: 'mindmap',
+      title: 'Mindmap Sơ đồ tư duy',
+      sub: 'Vẽ sơ đồ tư duy KHTN theo yêu cầu',
+      icon: GitFork,
+      // 10. Violet / Purple theme
+      boxBorder: 'border-violet-400 bg-white',
+      boxText: 'text-violet-950',
+      iconBg: 'bg-violet-600 text-white',
+      chevronColor: 'text-violet-400'
+    },
+    {
+      id: 'publish_app',
+      title: 'Xuất bản app (Netlify)',
+      sub: 'Tải tệp ZIP web để up lên Netlify',
+      icon: Globe,
+      // 11. Emerald / Teal theme
+      boxBorder: 'border-emerald-500 bg-emerald-50/50',
+      boxText: 'text-emerald-950 font-black',
+      iconBg: 'bg-gradient-to-tr from-emerald-600 to-teal-600 text-white shadow-xs',
+      chevronColor: 'text-emerald-600'
     }
   ];
 

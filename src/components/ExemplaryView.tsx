@@ -367,11 +367,7 @@ export function ExemplaryView({
                           </button>
                           {onDeletePost && (
                             <button
-                              onClick={() => {
-                                if (window.confirm(`Xác nhận xóa bài vinh danh em ${post.studentName}?`)) {
-                                  onDeletePost(post.id);
-                                }
-                              }}
+                              onClick={() => onDeletePost(post.id)}
                               className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 cursor-pointer"
                               title="Xóa bài viết này"
                             >

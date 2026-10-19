@@ -8,6 +8,7 @@ export interface MultipleChoiceQuestion {
   options: [string, string, string, string];
   correctAnswer: number; // 0, 1, 2, 3
   explanation?: string;
+  imageUrl?: string; // Ảnh minh họa cho câu hỏi (sơ đồ, hình vẽ, đồ thị, cấu tạo...)
 }
 
 export interface TrueFalseStatement {
@@ -22,6 +23,15 @@ export interface TrueFalseQuestion {
   question: string; // Tình huống / đoạn văn bản dẫn
   statements: [TrueFalseStatement, TrueFalseStatement, TrueFalseStatement, TrueFalseStatement];
   explanation?: string;
+  imageUrl?: string; // Ảnh minh họa cho câu hỏi đúng sai
+}
+
+export interface ShortAnswerBlank {
+  id: string; // '1' | '2' hoặc 'slot_1', 'slot_2'
+  label?: string; // Ví dụ: 'Chỗ điền (1)' hoặc 'Ý 1'
+  acceptableAnswers: string[]; // Các dạng đáp án số chấp nhận
+  unit?: string;
+  points?: number; // 0.5 điểm mỗi chỗ điền
 }
 
 export interface ShortAnswerQuestion {
@@ -31,26 +41,56 @@ export interface ShortAnswerQuestion {
   acceptableAnswers: string[]; // Chấp nhận các dạng nhập tương đương
   unit?: string;
   explanation?: string;
+  imageUrl?: string; // Ảnh minh họa cho câu hỏi trả lời ngắn
+  blanks?: ShortAnswerBlank[]; // Cấu trúc chuẩn: 1 câu có 2 chỗ điền số (mỗi chỗ 0.5đ, tổng 1.0đ)
 }
 
-export type ExamQuestion = MultipleChoiceQuestion | TrueFalseQuestion | ShortAnswerQuestion;
+export interface EssayQuestion {
+  id: string;
+  type: 'essay';
+  question: string;
+  points?: number; // mặc định 1.0 điểm
+  sampleAnswer?: string;
+  gradingGuide?: string;
+  imageUrl?: string;
+}
+
+export type ExamQuestion = MultipleChoiceQuestion | TrueFalseQuestion | ShortAnswerQuestion | EssayQuestion;
+
+export interface ExamReminderNotification {
+  id: string;
+  title: string;
+  targetClass: string; // 'all' hoặc '6A', '8A1', '9A2'...
+  grade?: GradeLevel | 'all';
+  subject: SubjectType;
+  examDate: string; // '2026-10-15'
+  examTime?: string; // '08:00'
+  examTitle?: string;
+  durationMinutes?: number;
+  contentNote: string;
+  createdAt: string;
+  createdBy: string;
+  isRead?: boolean;
+}
 
 export interface Exam {
   id: string;
   title: string;
   subject: 'physics' | 'chemistry' | 'biology';
   grade: GradeLevel;
-  testNumber?: 'TX1' | 'TX2' | 'TX3' | 'TX4';
+  testNumber?: 'TX1' | 'TX2' | 'TX3' | 'TX4' | 'TX5' | 'TX6' | 'TX7' | 'TX8' | string;
   durationMinutes: number; // Thường là 15 phút KTTX
   totalPoints: number; // 10.0 điểm
   mode: 'mode_1' | 'mode_2'; // Chế độ 1: Mọi lúc (làm lúc nào cũng được) | Chế độ 2: Ấn định ngày mở (đặt ngày, tháng, năm, giờ, phút, giây)
   openAt?: string; // Định dạng thời gian bắt đầu mở đề: YYYY-MM-DDTHH:mm:ss
   openTime?: string; // Tương thích ngược
-  closeTime?: string;
+  closeAt?: string; // Thời gian đóng đề thi / hết giờ làm bài
+  closeTime?: string; // Tương thích ngược
   password?: string; // Không còn dùng mật khẩu
   isActive: boolean;
   questions: ExamQuestion[]; // 16 MCQs + 1 TF (4 items) + 1 SA = 18 câu
   createdAt: string;
+  examCategory?: 'regular' | 'periodic';
 }
 
 export interface StudentSubmission {
@@ -201,6 +241,7 @@ export interface UserSession {
   className?: string;
   adminName?: string;
   adminSubject?: 'physics' | 'chemistry' | 'biology' | 'all';
+  isTeacherAdmin?: boolean;
 }
 
 export interface SystemConfig {
@@ -214,5 +255,58 @@ export interface SystemConfig {
   bannerTitle: string;
   bannerSubtitle: string;
   logoUrl?: string;
+}
+
+export type GroupNumber = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+
+export interface GroupSubmission {
+  id: string;
+  examId: string;
+  examTitle: string;
+  lessonTitle: string;
+  groupNumber: GroupNumber;
+  groupName: string; // 'Nhóm 1' .. 'Nhóm 8'
+  className: string;
+  leaderName?: string;
+  membersNote?: string;
+  submittedAt: string;
+  timeSpentSeconds: number;
+  totalScore: number; // 0.0 - 10.0
+  trophy: 'gold' | 'silver' | 'bronze' | 'effort';
+  correctCount: number;
+  totalQuestions: number;
+  answers: Record<string, number>; // questionId -> chosenOption
+}
+
+export interface InteractiveLessonExam {
+  id: string;
+  lessonTitle: string;
+  lessonCode?: string;
+  title: string;
+  subject: 'physics' | 'chemistry' | 'biology';
+  grade: GradeLevel;
+  durationMinutes: number;
+  totalPoints: number;
+  questions: MultipleChoiceQuestion[];
+  createdAt: string;
+  createdBy?: string;
+}
+
+export interface PeriodicExamCodeKey {
+  code: string; // e.g. '0101', '0102', '0103', '0104', '0105', '0106'
+  part1Keys: string[]; // 40 keys: 'A' | 'B' | 'C' | 'D'
+  part2Keys: boolean[][]; // 8 questions, each 4 items [a, b, c, d]
+  part3Keys: string[]; // 6 short answer keys
+  essayMaxScore?: number;
+}
+
+export interface ShuffledExamPaper {
+  examCode: string;
+  title: string;
+  subject: 'physics' | 'chemistry' | 'biology';
+  grade: GradeLevel;
+  durationMinutes: number;
+  questions: ExamQuestion[];
+  keys: PeriodicExamCodeKey;
 }
 
