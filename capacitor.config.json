@@ -1,0 +1,10 @@
+{
+  "appId": "vn.edu.hoahocndh.app",
+  "appName": "Hóa Học THCS NĐH",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  }
+}

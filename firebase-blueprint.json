@@ -1,0 +1,347 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with role and class assignment",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "description": "User email address" },
+        "fullName": { "type": "string", "description": "User full name", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["admin", "teacher", "student", "parent"], "description": "Role of the user" },
+        "phone": { "type": "string", "description": "User phone number", "maxLength": 20 },
+        "enrolledClass": { "type": "string", "description": "Class enrolled in", "maxLength": 50 },
+        "status": { "type": "string", "enum": ["active", "pending", "locked"], "description": "Account status" },
+        "createdAt": { "type": "string", "description": "Account creation ISO timestamp" }
+      },
+      "required": ["email", "fullName", "role"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Marker document for admin privileges",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "description": "Admin email address" },
+        "fullName": { "type": "string", "description": "Admin full name", "maxLength": 100 },
+        "createdAt": { "type": "string", "description": "Admin creation timestamp" }
+      },
+      "required": ["email"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Official student profile managed by teacher",
+      "type": "object",
+      "properties": {
+        "studentCode": { "type": "string", "description": "Student code ID", "maxLength": 30 },
+        "fullName": { "type": "string", "description": "Full student name", "maxLength": 100 },
+        "email": { "type": "string", "description": "Contact email", "maxLength": 100 },
+        "phone": { "type": "string", "description": "Parent or student phone", "maxLength": 20 },
+        "school": { "type": "string", "description": "Current school", "maxLength": 150 },
+        "grade": { "type": "string", "description": "Grade level (6, 7, 8, 9)", "maxLength": 10 },
+        "enrolledClass": { "type": "string", "description": "Class name, e.g. H8.1, BD học sinh giỏi", "maxLength": 50 },
+        "status": { "type": "string", "enum": ["studying", "paused", "left"], "description": "Enrollment status" },
+        "notes": { "type": "string", "description": "Teacher notes", "maxLength": 500 },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["studentCode", "fullName", "enrolledClass"]
+    },
+    "Class": {
+      "title": "Class",
+      "description": "Chemistry class information",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Class code/name", "maxLength": 50 },
+        "description": { "type": "string", "description": "Class description", "maxLength": 500 },
+        "grade": { "type": "string", "description": "Grade 6, 7, 8, 9 or HSG", "maxLength": 20 },
+        "teacher": { "type": "string", "description": "Teacher in charge", "maxLength": 100 },
+        "schedule": { "type": "string", "description": "Weekly meeting schedule", "maxLength": 200 },
+        "studentCount": { "type": "number", "description": "Total enrolled students" }
+      },
+      "required": ["name", "grade", "teacher"]
+    },
+    "Tuition": {
+      "title": "Tuition",
+      "description": "Monthly tuition fee record for students",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "description": "Student document ID", "maxLength": 128 },
+        "studentName": { "type": "string", "description": "Student full name", "maxLength": 100 },
+        "classGroup": { "type": "string", "description": "Class code", "maxLength": 50 },
+        "month": { "type": "string", "description": "Month in format MM/YYYY", "maxLength": 10 },
+        "amountDue": { "type": "number", "description": "Amount due in VND" },
+        "amountPaid": { "type": "number", "description": "Amount paid in VND" },
+        "status": { "type": "string", "enum": ["paid", "unpaid", "partial"], "description": "Payment status" },
+        "paymentDate": { "type": "string", "description": "Date payment was received", "maxLength": 30 },
+        "paymentMethod": { "type": "string", "description": "Cash or bank transfer", "maxLength": 50 },
+        "notes": { "type": "string", "description": "Notes", "maxLength": 300 },
+        "confirmedBy": { "type": "string", "description": "Teacher or Admin who confirmed", "maxLength": 100 }
+      },
+      "required": ["studentName", "classGroup", "month", "amountDue", "status"]
+    },
+    "Schedule": {
+      "title": "Schedule",
+      "description": "Timetable item for class",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Timetable title", "maxLength": 150 },
+        "classGroup": { "type": "string", "description": "Class code or all", "maxLength": 50 },
+        "semester": { "type": "string", "description": "Academic semester / period", "maxLength": 50 },
+        "fileUrl": { "type": "string", "description": "Attachment or image URL", "maxLength": 1000 },
+        "fileType": { "type": "string", "enum": ["image", "pdf", "word", "excel", "text"], "description": "Type of timetable file" },
+        "notes": { "type": "string", "description": "Schedule notes", "maxLength": 500 },
+        "updatedAt": { "type": "string", "description": "Last update timestamp" }
+      },
+      "required": ["title", "classGroup"]
+    },
+    "Announcement": {
+      "title": "Announcement",
+      "description": "News and announcements from teacher",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Title of announcement", "maxLength": 200 },
+        "content": { "type": "string", "description": "Announcement body", "maxLength": 5000 },
+        "imageUrl": { "type": "string", "description": "Banner or image URL", "maxLength": 1000 },
+        "fileUrl": { "type": "string", "description": "Attached file URL", "maxLength": 1000 },
+        "fileName": { "type": "string", "description": "Attached file name", "maxLength": 200 },
+        "targetClasses": { "type": "string", "description": "Target classes or All", "maxLength": 200 },
+        "isPinned": { "type": "boolean", "description": "Whether announcement is pinned to top" },
+        "authorName": { "type": "string", "description": "Author name", "maxLength": 100 },
+        "createdAt": { "type": "string", "description": "Publication timestamp" }
+      },
+      "required": ["title", "content"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "Discussion comments on an announcement",
+      "type": "object",
+      "properties": {
+        "announcementId": { "type": "string", "description": "Parent announcement ID", "maxLength": 128 },
+        "authorId": { "type": "string", "description": "Author user ID", "maxLength": 128 },
+        "authorName": { "type": "string", "description": "Comment author full name", "maxLength": 100 },
+        "authorRole": { "type": "string", "description": "Role of commentator", "maxLength": 50 },
+        "content": { "type": "string", "description": "Comment text", "maxLength": 1000 },
+        "createdAt": { "type": "string", "description": "Comment timestamp" },
+        "isHidden": { "type": "boolean", "description": "Flag if comment is hidden by admin" }
+      },
+      "required": ["announcementId", "content", "authorName"]
+    },
+    "Homework": {
+      "title": "Homework",
+      "description": "Homework assignment for students",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Homework title", "maxLength": 200 },
+        "description": { "type": "string", "description": "Homework instructions", "maxLength": 3000 },
+        "classGroup": { "type": "string", "description": "Target class", "maxLength": 50 },
+        "assignedDate": { "type": "string", "description": "Date assigned", "maxLength": 30 },
+        "dueDate": { "type": "string", "description": "Submission deadline", "maxLength": 30 },
+        "fileUrl": { "type": "string", "description": "Attached document URL", "maxLength": 1000 },
+        "fileName": { "type": "string", "description": "Document name", "maxLength": 200 },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["title", "classGroup", "dueDate"]
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "Interactive Chemistry Quiz and Practice Exam",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Quiz title", "maxLength": 200 },
+        "grade": { "type": "string", "description": "Grade level", "maxLength": 20 },
+        "topic": { "type": "string", "description": "Chemistry topic", "maxLength": 150 },
+        "chapter": { "type": "string", "description": "Chapter name", "maxLength": 150 },
+        "durationMinutes": { "type": "number", "description": "Allowed time in minutes" },
+        "totalPoints": { "type": "number", "description": "Total maximum points" },
+        "status": { "type": "string", "enum": ["draft", "published", "closed"], "description": "Publication status" },
+        "targetClasses": { "type": "string", "description": "Assigned classes", "maxLength": 200 },
+        "createdAt": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["title", "grade", "topic", "status"]
+    },
+    "QuizSubmission": {
+      "title": "QuizSubmission",
+      "description": "Student quiz submission and graded result",
+      "type": "object",
+      "properties": {
+        "quizId": { "type": "string", "description": "Quiz ID", "maxLength": 128 },
+        "studentId": { "type": "string", "description": "Student User ID", "maxLength": 128 },
+        "studentName": { "type": "string", "description": "Student name", "maxLength": 100 },
+        "classGroup": { "type": "string", "description": "Class name", "maxLength": 50 },
+        "score": { "type": "number", "description": "Final score achieved" },
+        "maxScore": { "type": "number", "description": "Max possible score" },
+        "submittedAt": { "type": "string", "description": "Submission timestamp" },
+        "feedback": { "type": "string", "description": "Teacher or AI feedback", "maxLength": 2000 }
+      },
+      "required": ["quizId", "studentName", "score"]
+    },
+    "Material": {
+      "title": "Material",
+      "description": "Reference documents and textbooks",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Document title", "maxLength": 200 },
+        "grade": { "type": "string", "description": "Grade level", "maxLength": 20 },
+        "category": { "type": "string", "description": "Category e.g. Lý thuyết, Sách tham khảo", "maxLength": 100 },
+        "fileUrl": { "type": "string", "description": "Download or view link", "maxLength": 1000 },
+        "fileType": { "type": "string", "description": "PDF, Word, etc.", "maxLength": 20 },
+        "description": { "type": "string", "description": "Document description", "maxLength": 500 },
+        "author": { "type": "string", "description": "Book or doc author", "maxLength": 100 }
+      },
+      "required": ["title", "grade", "fileUrl"]
+    },
+    "Experiment": {
+      "title": "Experiment",
+      "description": "Chemistry video experiments and safety guidance",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Experiment title", "maxLength": 200 },
+        "grade": { "type": "string", "description": "Grade level", "maxLength": 20 },
+        "category": { "type": "string", "description": "Chemical topic", "maxLength": 100 },
+        "videoUrl": { "type": "string", "description": "YouTube or direct video URL", "maxLength": 1000 },
+        "description": { "type": "string", "description": "Description of experiment phenomenon", "maxLength": 1000 },
+        "chemicalEquation": { "type": "string", "description": "Balanced chemical equation", "maxLength": 500 },
+        "safetyNotes": { "type": "string", "description": "Safety rules and hazards", "maxLength": 500 }
+      },
+      "required": ["title", "grade", "videoUrl"]
+    },
+    "LeaveRequest": {
+      "title": "LeaveRequest",
+      "description": "Student absence permission request",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string", "description": "Student user ID", "maxLength": 128 },
+        "studentName": { "type": "string", "description": "Student full name", "maxLength": 100 },
+        "classGroup": { "type": "string", "description": "Class code", "maxLength": 50 },
+        "reason": { "type": "string", "description": "Reason for leave", "maxLength": 1000 },
+        "dateFrom": { "type": "string", "description": "Start date", "maxLength": 30 },
+        "dateTo": { "type": "string", "description": "End date", "maxLength": 30 },
+        "parentPhone": { "type": "string", "description": "Parent phone number", "maxLength": 20 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"], "description": "Approval status" },
+        "adminNote": { "type": "string", "description": "Teacher note on request", "maxLength": 500 },
+        "createdAt": { "type": "string", "description": "Request creation timestamp" }
+      },
+      "required": ["studentName", "classGroup", "reason", "dateFrom", "status"]
+    },
+    "Registration": {
+      "title": "Registration",
+      "description": "Online student registration for chemistry courses",
+      "type": "object",
+      "properties": {
+        "fullName": { "type": "string", "description": "Student full name", "maxLength": 100 },
+        "phone": { "type": "string", "description": "Contact phone", "maxLength": 20 },
+        "email": { "type": "string", "description": "Email address", "maxLength": 100 },
+        "school": { "type": "string", "description": "School currently attending", "maxLength": 150 },
+        "currentGrade": { "type": "string", "description": "Grade level", "maxLength": 20 },
+        "desiredClass": { "type": "string", "description": "Desired class to enroll", "maxLength": 50 },
+        "note": { "type": "string", "description": "Special request or note", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["new", "contacted", "enrolled", "cancelled"], "description": "Registration status" },
+        "createdAt": { "type": "string", "description": "Registration timestamp" }
+      },
+      "required": ["fullName", "phone", "currentGrade", "status"]
+    },
+    "OmrScan": {
+      "title": "OmrScan",
+      "description": "Camera scanned multiple-choice exam",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Exam name", "maxLength": 200 },
+        "classGroup": { "type": "string", "description": "Class code", "maxLength": 50 },
+        "studentName": { "type": "string", "description": "Student name", "maxLength": 100 },
+        "imageUrl": { "type": "string", "description": "Captured paper image URL or base64", "maxLength": 5000 },
+        "score": { "type": "number", "description": "Calculated score" },
+        "totalQuestions": { "type": "number", "description": "Number of questions" },
+        "scannedAt": { "type": "string", "description": "Scan timestamp" }
+      },
+      "required": ["title", "studentName", "score"]
+    },
+    "AppSetting": {
+      "title": "AppSetting",
+      "description": "Global application configuration and content",
+      "type": "object",
+      "properties": {
+        "bannerTitle": { "type": "string", "description": "Banner main title", "maxLength": 200 },
+        "bannerSubtitle": { "type": "string", "description": "Banner slogan", "maxLength": 200 },
+        "bannerBgColor": { "type": "string", "description": "Banner background color code", "maxLength": 50 },
+        "bannerImageUrl": { "type": "string", "description": "Custom banner image URL", "maxLength": 1000 },
+        "logoUrl": { "type": "string", "description": "Custom logo URL", "maxLength": 1000 },
+        "tickerText": { "type": "string", "description": "Marquee banner text", "maxLength": 500 },
+        "tickerEnabled": { "type": "boolean", "description": "Whether running ticker is enabled" },
+        "phone": { "type": "string", "description": "Contact phone number", "maxLength": 50 },
+        "email": { "type": "string", "description": "Contact email", "maxLength": 100 },
+        "address": { "type": "string", "description": "Center address", "maxLength": 255 },
+        "teacherName": { "type": "string", "description": "Teacher in charge name", "maxLength": 100 },
+        "teacherTitle": { "type": "string", "description": "Teacher bio tagline", "maxLength": 255 }
+      },
+      "required": ["bannerTitle", "tickerText"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles and roles"
+    },
+    "/admins/{adminId}": {
+      "schema": "Admin",
+      "description": "Admin authorization markers"
+    },
+    "/students/{studentId}": {
+      "schema": "Student",
+      "description": "Student management roster"
+    },
+    "/classes/{classId}": {
+      "schema": "Class",
+      "description": "Chemistry classes information"
+    },
+    "/tuitions/{tuitionId}": {
+      "schema": "Tuition",
+      "description": "Tuition fee tracking records"
+    },
+    "/schedules/{scheduleId}": {
+      "schema": "Schedule",
+      "description": "Class timetables"
+    },
+    "/announcements/{announcementId}": {
+      "schema": "Announcement",
+      "description": "Official announcements"
+    },
+    "/announcements/{announcementId}/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Comments on announcements"
+    },
+    "/homeworks/{homeworkId}": {
+      "schema": "Homework",
+      "description": "Homework assignments"
+    },
+    "/quizzes/{quizId}": {
+      "schema": "Quiz",
+      "description": "Interactive exams and quizzes"
+    },
+    "/quiz_submissions/{submissionId}": {
+      "schema": "QuizSubmission",
+      "description": "Graded quiz submissions"
+    },
+    "/materials/{materialId}": {
+      "schema": "Material",
+      "description": "Reference materials"
+    },
+    "/experiments/{experimentId}": {
+      "schema": "Experiment",
+      "description": "Chemistry video experiments"
+    },
+    "/leave_requests/{requestId}": {
+      "schema": "LeaveRequest",
+      "description": "Student absence permission requests"
+    },
+    "/registrations/{registrationId}": {
+      "schema": "Registration",
+      "description": "Online student registrations"
+    },
+    "/omr_scans/{scanId}": {
+      "schema": "OmrScan",
+      "description": "Scanned camera tests"
+    },
+    "/app_settings/{settingId}": {
+      "schema": "AppSetting",
+      "description": "App settings and custom branding"
+    }
+  }
+}

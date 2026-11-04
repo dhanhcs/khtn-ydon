@@ -1,15 +1,11 @@
-# Netlify Configuration for THCS & THPT Y Đôn
 [build]
-  command = "npm run build"
+  command = "npm install && npm run build"
   publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
 
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
-
-[[headers]]
-  for = "/*"
-  [headers.values]
-    X-Frame-Options = "SAMEORIGIN"
-    X-Content-Type-Options = "nosniff"

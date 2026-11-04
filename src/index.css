@@ -1,6 +1,15 @@
 @import "tailwindcss";
 
-@keyframes marquee-rtl {
+@keyframes marquee {
+  0% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes continuousTicker {
   0% {
     transform: translate3d(0, 0, 0);
   }
@@ -9,53 +18,46 @@
   }
 }
 
-.animate-marquee-rtl {
-  display: flex;
-  width: max-content;
-  animation: marquee-rtl 32s linear infinite;
+.animate-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marquee 28s linear infinite;
+}
+
+.ticker-track-running {
+  display: flex !important;
+  width: max-content !important;
+  white-space: nowrap !important;
   will-change: transform;
+  animation: continuousTicker 26s linear infinite !important;
 }
 
-.animate-marquee-rtl:hover {
-  animation-play-state: paused;
+.ticker-track-running:hover {
+  animation-play-state: paused !important;
 }
 
-@keyframes marquee-ltr {
-  0% {
-    transform: translateX(-50%);
-  }
-  100% {
-    transform: translateX(0%);
-  }
+.ticker-track-paused {
+  animation-play-state: paused !important;
 }
 
-.animate-marquee-ltr {
-  display: flex;
-  width: max-content;
-  animation: marquee-ltr 28s linear infinite;
+body {
+  background-color: #FAF2EE;
+  color: #1e293b;
+  min-height: 100vh;
 }
 
-.animate-marquee-ltr:hover {
-  animation-play-state: paused;
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
-
-.font-times {
-  font-family: "Times New Roman", Times, "Cambria", Georgia, serif;
+::-webkit-scrollbar-track {
+  background: #FAF2EE;
 }
-
-/* Quy ước chuẩn toán học & hóa học: Chỉ số dưới lệch dưới, số mũ lũy thừa lệch trên */
-sub, .formula-sub {
-  vertical-align: sub;
-  font-size: 0.72em;
-  line-height: 0;
-  position: relative;
-  bottom: -0.22em;
+::-webkit-scrollbar-thumb {
+  background: #e2d7d2;
+  border-radius: 4px;
 }
-
-sup, .formula-sup {
-  vertical-align: super;
-  font-size: 0.72em;
-  line-height: 0;
-  position: relative;
-  top: -0.32em;
+::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1;
 }

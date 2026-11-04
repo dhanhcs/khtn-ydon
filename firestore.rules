@@ -1,0 +1,151 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all unknown collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'n.dhanhcs2006@gmail.com' ||
+        request.auth.token.email == 'n.dhanhcs@gmail.com'
+      );
+    }
+
+    function isValidMapPayload() {
+      return request.resource.data is map;
+    }
+
+    // App settings & cross-device cloud sync documents
+    // (Includes main_config, student_roster, tuition_records, registered_users,
+    //  exam_bank, exam_results, quiz_submissions, homework_submissions,
+    //  homeworks_list, item_comments, and chunked payloads)
+    // Allows real-time sync across PC, Mobile, AI Studio preview, and Published Cloud Run
+    // even when Admin logs in via Master Password or Student logs in via Student Account.
+    match /app_settings/{settingId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if true;
+    }
+
+    // Admins marker collection
+    match /admins/{adminId} {
+      allow read: if true;
+      allow write: if isAdmin() || isValidMapPayload();
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if isAdmin();
+    }
+
+    // Classes info
+    match /classes/{classId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if true;
+    }
+
+    // Official Student roster individual docs
+    match /students/{studentId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if true;
+    }
+
+    // Tuition records
+    match /tuitions/{tuitionId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if true;
+    }
+
+    // Timetables and schedules
+    match /schedules/{scheduleId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if true;
+    }
+
+    // Announcements and news
+    match /announcements/{announcementId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if true;
+
+      // Announcement comments
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create, update: if isValidMapPayload();
+        allow delete: if true;
+      }
+    }
+
+    // Homework assignments
+    match /homeworks/{homeworkId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if true;
+    }
+
+    // Quizzes & Practice exams
+    match /quizzes/{quizId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if true;
+    }
+
+    // Quiz submissions
+    match /quiz_submissions/{submissionId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if true;
+    }
+
+    // Reference materials
+    match /materials/{materialId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if true;
+    }
+
+    // Video chemistry experiments
+    match /experiments/{experimentId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if true;
+    }
+
+    // Student absence leave requests
+    match /leave_requests/{requestId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if true;
+    }
+
+    // Online course registrations
+    match /registrations/{registrationId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if true;
+    }
+
+    // OMR scans (camera grading)
+    match /omr_scans/{scanId} {
+      allow read: if true;
+      allow create, update: if isValidMapPayload();
+      allow delete: if true;
+    }
+  }
+}
