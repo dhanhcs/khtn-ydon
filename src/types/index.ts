@@ -43,7 +43,7 @@ export interface StudentRecord {
   roadmapProgress?: number;
   roadmapNote?: string;
   // Theo dõi đóng học phí theo 12 tháng: Th06, Th 07, Th08, Th09, Th10, Th11, Th12, Th01, Th02, Th03, Th04, Th05 ('X' | 'Ch')
-  monthlyTuition?: Record<string, 'X' | 'Ch'>;
+  monthlyTuition?: Record<string, 'X' | 'Ch' | ''>;
   // Theo dõi đóng học phí đồng bộ trực tiếp vào danh sách học sinh
   tuitionStatus?: 'paid' | 'unpaid' | 'partial';
   tuitionMonth?: string;

@@ -533,9 +533,9 @@ export const InteractiveQuizPage: React.FC = () => {
     let parsedMc: QuizItem['multipleChoice'] = [];
     for (const att of uploadExamAttachments) {
       if (att.extractedText) {
-        const questions = parseWordExamContent(att.extractedText);
-        if (questions.length > 0) {
-          parsedMc = [...parsedMc, ...questions];
+        const parsed = parseWordExamContent(att.extractedText);
+        if (parsed.multipleChoice.length > 0) {
+          parsedMc = [...parsedMc, ...parsed.multipleChoice];
         }
       }
     }
@@ -555,12 +555,12 @@ export const InteractiveQuizPage: React.FC = () => {
       fillInBlank: [],
       essay: [
         {
-          id: `es-${Date.now()}`,
+          id: 1,
           question:
             uploadExamNote.trim() ||
             'Xem trực tiếp đề bài trong tệp đính kèm (Word / PDF / Ảnh) phía trên, trình bày lời giải vào ô bên dưới hoặc đính kèm file bài làm của em để nộp bài.',
-          guidelines: 'Thầy Nguyễn Đình Hành sẽ chấm điểm trực tiếp trên hệ thống.',
-          maxPoints: 10,
+          solutionGuide: 'Thầy Nguyễn Đình Hành sẽ chấm điểm trực tiếp trên hệ thống.',
+          points: 10,
         },
       ],
       questionsCount: parsedMc.length + 1,

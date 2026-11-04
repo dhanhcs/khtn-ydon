@@ -120,7 +120,7 @@ export function getLastRosterSavedTime(): string {
 export async function saveActiveStudentRoster(roster: StudentRecord[]): Promise<boolean> {
   const cleanRoster = Array.isArray(roster)
     ? roster
-        .filter((s) => s && s.fullName && !LEGACY_MOCK_IDS.has(s.id))
+        .filter((s) => s && s.fullName && !LEGACY_MOCK_IDS.has(s.id || ''))
         .map(normalizeMonthlyTuitionRecord)
     : [];
   const now = Date.now();
@@ -1422,41 +1422,75 @@ export function parseMultiClassStudentsFromWorkbook(
 }
 
 /**
- * Check if a student name (and optional class / phone / email) is present in the teacher's approved roster.
+ * Check if a student name (and optional class / phone / email / custom roster) is present in the teacher's approved roster.
+ * Supports both:
+ *  - verifyStudentInRoster(fullName, email, phone, enrolledClassInput)
+ *  - verifyStudentInRoster(fullName, enrolledClassInput, rosterArray)
  */
 export function verifyStudentInRoster(
   fullName: string,
-  email?: string,
-  phone?: string,
+  emailOrClass?: string,
+  phoneOrRoster?: string | StudentRecord[],
   enrolledClassInput?: string
-): { isEnrolled: boolean; studentRecord?: StudentRecord } {
-  if (!fullName || !fullName.trim()) {
-    return { isEnrolled: false };
+): {
+  isEnrolled: boolean;
+  studentRecord?: StudentRecord;
+  isMatch: boolean;
+  matchedStudent?: StudentRecord;
+} {
+  if (!fullName || typeof fullName !== 'string' || !fullName.trim()) {
+    return { isEnrolled: false, isMatch: false };
   }
 
-  const roster = getActiveStudentRoster();
+  let roster: StudentRecord[];
+  let rawEmail = '';
+  let rawPhone = '';
+  let rawClass = enrolledClassInput || '';
+
+  if (Array.isArray(phoneOrRoster)) {
+    roster = phoneOrRoster;
+    if (!rawClass && typeof emailOrClass === 'string' && !emailOrClass.includes('@')) {
+      rawClass = emailOrClass;
+    } else if (typeof emailOrClass === 'string' && emailOrClass.includes('@')) {
+      rawEmail = emailOrClass;
+    }
+  } else {
+    roster = getActiveStudentRoster();
+    if (typeof emailOrClass === 'string') {
+      if (emailOrClass.includes('@')) {
+        rawEmail = emailOrClass;
+      } else if (!rawClass) {
+        rawClass = emailOrClass;
+      }
+    }
+    if (typeof phoneOrRoster === 'string') {
+      rawPhone = phoneOrRoster;
+    }
+  }
+
   const normalizedInputName = normalizeVietnamese(fullName);
-  const normalizedInputEmail = (email || '').trim().toLowerCase();
-  const normalizedInputPhone = (phone || '').replace(/\D/g, '');
-  const normalizedTargetClass = enrolledClassInput?.trim()
-    ? normalizeClassName(enrolledClassInput.trim(), '')
+  const normalizedInputEmail = String(rawEmail || '').trim().toLowerCase();
+  const normalizedInputPhone = String(rawPhone || '').replace(/\D/g, '');
+  const normalizedTargetClass = String(rawClass || '').trim()
+    ? normalizeClassName(String(rawClass || '').trim(), '')
     : '';
 
   // Find all candidates matching name, email, or phone
   const candidates = roster.filter((s) => {
+    if (!s || !s.fullName) return false;
     const sName = normalizeVietnamese(s.fullName);
     if (sName && sName === normalizedInputName) return true;
 
     if (
       normalizedInputEmail &&
       s.email &&
-      s.email.trim().toLowerCase() === normalizedInputEmail
+      String(s.email).trim().toLowerCase() === normalizedInputEmail
     ) {
       return true;
     }
 
     if (normalizedInputPhone && s.phone) {
-      const sPhone = s.phone.replace(/\D/g, '');
+      const sPhone = String(s.phone).replace(/\D/g, '');
       if (sPhone && sPhone === normalizedInputPhone) return true;
     }
 
@@ -1471,16 +1505,28 @@ export function verifyStudentInRoster(
           normalizedTargetClass.toLowerCase()
       );
       if (exactClassMatch) {
-        return { isEnrolled: true, studentRecord: exactClassMatch };
+        return {
+          isEnrolled: true,
+          studentRecord: exactClassMatch,
+          isMatch: true,
+          matchedStudent: exactClassMatch,
+        };
       }
     }
-    return { isEnrolled: true, studentRecord: candidates[0] };
+    const firstMatch = candidates[0];
+    return {
+      isEnrolled: true,
+      studentRecord: firstMatch,
+      isMatch: true,
+      matchedStudent: firstMatch,
+    };
   }
 
-  return { isEnrolled: false };
+  return { isEnrolled: false, isMatch: false };
 }
 
 export function normalizeVietnameseText(str: string): string {
   return normalizeVietnamese(str);
 }
+
 

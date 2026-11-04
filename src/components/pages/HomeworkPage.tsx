@@ -574,12 +574,11 @@ export const HomeworkPage: React.FC = () => {
   // Download sample homework file when student clicks "Tải đề" on default items
   const handleDownloadDefaultHomeworkDoc = (hw: HomeworkItem) => {
     if (hw.attachments && hw.attachments.length > 0) return;
-    recordMediaDownload(
-      `hw-${hw.id || 'hw'}`,
-      userProfile?.fullName || '',
-      userProfile?.enrolledClass,
-      isAdmin
-    );
+    recordMediaDownload(`hw-${hw.id || 'hw'}`, {
+      userName: userProfile?.fullName || '',
+      userClass: userProfile?.enrolledClass || '',
+      userRole: isAdmin ? 'admin' : userProfile?.role || 'student',
+    });
     const content = `PHIẾU BÀI TẬP HÓA HỌC THCS - THẦY NGUYỄN ĐÌNH HÀNH\n==================================================\nTiêu đề: ${hw.title}\nLớp áp dụng: ${hw.classGroup}\nNgày giao: ${hw.assignedDate} | Hạn nộp: ${hw.dueDate}\n\nNội dung & Yêu cầu:\n${hw.description}\n\nHướng dẫn nộp bài:\nHọc sinh làm bài ra vở (chụp ảnh rõ nét) hoặc trình bày trên file Word (.docx) rồi bấm nút "Gửi bài tập (Word / Ảnh)" trên hệ thống để Thầy chấm điểm.`;
     const blob = new Blob([content], { type: 'application/msword;charset=utf-8' });
     const url = URL.createObjectURL(blob);
