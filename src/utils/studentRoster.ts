@@ -1479,3 +1479,8 @@ export function verifyStudentInRoster(
 
   return { isEnrolled: false };
 }
+
+export function normalizeVietnameseText(str: string): string {
+  return normalizeVietnamese(str);
+}
+

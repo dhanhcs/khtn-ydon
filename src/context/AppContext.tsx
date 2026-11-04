@@ -24,7 +24,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   bannerSubtitle: 'Trách nhiệm - Uy tín - Chất lượng',
   bannerBgColor: 'linear-gradient(135deg, #1877F2 0%, #166FE5 50%, #0d5cb8 100%)',
   bannerImageUrl: '',
-  logoUrl: '',
+  logoUrl: '/favicon.png',
   logoSize: 100,
   logoShape: 'original',
   tickerText: 'Chào mừng phụ huynh và học sinh đến Cổng học tập trực tuyến Hóa học của thầy Nguyễn Đình Hành',
@@ -129,7 +129,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               ...DEFAULT_APP_SETTINGS,
               ...prev,
               ...serverData,
-              logoUrl: serverData.logoUrl || prev.logoUrl || '',
+              logoUrl: serverData.logoUrl || prev.logoUrl || '/favicon.png',
               tuitionQrUrl: serverData.tuitionQrUrl || prev.tuitionQrUrl || '',
               bankName: serverData.bankName || prev.bankName || 'Vietcombank',
               bankAccountNumber: serverData.bankAccountNumber ?? prev.bankAccountNumber ?? '',
@@ -167,7 +167,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               ...DEFAULT_APP_SETTINGS,
               ...prev,
               ...fsData,
-              logoUrl: fsData.logoUrl || prev.logoUrl || '',
+              logoUrl: fsData.logoUrl || prev.logoUrl || '/favicon.png',
               tuitionQrUrl: fsData.tuitionQrUrl || prev.tuitionQrUrl || '',
               bankAccountNumber:
                 fsData.bankAccountNumber ?? prev.bankAccountNumber ?? '',
@@ -212,6 +212,106 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     return () => unsubscribe();
   }, []);
+
+  // Automatically sync Browser Tab Favicon, Apple Touch Icon & Document Title with App Logo & Banner Title
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+
+    if (settings.bannerTitle && settings.bannerTitle.trim()) {
+      document.title = settings.bannerTitle.trim();
+    }
+
+    const applyFaviconHref = (href: string, mimeType: string) => {
+      const relList = [
+        { id: 'app-favicon-png', rel: 'icon', type: mimeType },
+        { id: 'app-favicon-ico', rel: 'icon', type: mimeType },
+        { id: 'app-shortcut-icon', rel: 'shortcut icon', type: mimeType },
+        { id: 'app-apple-touch-icon', rel: 'apple-touch-icon', type: mimeType },
+      ];
+      relList.forEach(({ id, rel, type }) => {
+        let link = document.getElementById(id) as HTMLLinkElement | null;
+        if (!link) {
+          link = document.createElement('link');
+          link.id = id;
+          link.rel = rel;
+          document.head.appendChild(link);
+        }
+        link.type = type;
+        link.href = href;
+      });
+    };
+
+    const customLogo = settings.logoUrl?.trim() || '/favicon.png?v=ndh2026';
+
+    // Render crisp square 128x128 favicon from customLogo so browser tabs never stretch non-square logos
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      try {
+        const size = 128;
+        const canvas = document.createElement('canvas');
+        canvas.width = size;
+        canvas.height = size;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          applyFaviconHref(customLogo, 'image/png');
+          return;
+        }
+        ctx.clearRect(0, 0, size, size);
+
+        if (settings.logoShape === 'circle') {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2);
+          ctx.closePath();
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fill();
+          ctx.clip();
+        } else if (settings.logoShape === 'rounded') {
+          const r = 24;
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(r, 2);
+          ctx.lineTo(size - r, 2);
+          ctx.quadraticCurveTo(size - 2, 2, size - 2, r);
+          ctx.lineTo(size - 2, size - r);
+          ctx.quadraticCurveTo(size - 2, size - 2, size - r, size - 2);
+          ctx.lineTo(r, size - 2);
+          ctx.quadraticCurveTo(2, size - 2, 2, size - r);
+          ctx.lineTo(2, r);
+          ctx.quadraticCurveTo(2, 2, r, 2);
+          ctx.closePath();
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fill();
+          ctx.clip();
+        }
+
+        const iw = img.naturalWidth || img.width || size;
+        const ih = img.naturalHeight || img.height || size;
+        const scale = Math.min((size - 8) / iw, (size - 8) / ih);
+        const dw = Math.round(iw * scale);
+        const dh = Math.round(ih * scale);
+        const dx = Math.round((size - dw) / 2);
+        const dy = Math.round((size - dh) / 2);
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, dx, dy, dw, dh);
+
+        if (settings.logoShape === 'circle' || settings.logoShape === 'rounded') {
+          ctx.restore();
+        }
+
+        applyFaviconHref(canvas.toDataURL('image/png'), 'image/png');
+      } catch {
+        applyFaviconHref(customLogo, 'image/png');
+      }
+    };
+    img.onerror = () => {
+      applyFaviconHref(customLogo, 'image/png');
+    };
+    img.src = customLogo;
+  }, [settings.logoUrl, settings.logoShape, settings.bannerTitle]);
 
   const updateSettings = async (newSettings: Partial<AppSettings>) => {
     const now = Date.now();

@@ -1,19 +1,19 @@
 [
   {
     "uid": "ndh-user-1792323662366-tuc8",
-    "studentCode": "NDH-H91-87",
-    "enrolledClass": "H9.1",
-    "role": "student",
-    "rawEmail": "nguyenbinhphuongtrang@hoahocndh.edu.vn",
-    "email": "nguyenbinhphuongtrang@hoahocndh.edu.vn",
-    "grade": "Khối 9",
-    "updatedAt": "2026-11-03T15:28:55.714Z",
-    "school": "NVX",
-    "phone": "",
-    "isOfficial": true,
-    "createdAt": "2026-10-18T11:41:02.366Z",
+    "email": "trangk@gmail.com",
+    "rawEmail": "trângk@gmail.com",
+    "passwordHash": "123@ak",
     "fullName": "Nguyễn Bình Phương Trang",
+    "role": "student",
+    "isOfficial": true,
     "status": "active",
-    "passwordHash": "123@ak"
+    "enrolledClass": "H6.1",
+    "school": "NVX",
+    "grade": "Khối 6",
+    "studentCode": "NDH-H61-87",
+    "phone": "",
+    "createdAt": "2026-10-18T11:41:02.366Z",
+    "updatedAt": "2026-10-18T12:05:00.000Z"
   }
 ]

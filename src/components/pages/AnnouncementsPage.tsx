@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { AnnouncementItem, FileAttachment } from '../../types';
 import { processUploadedFile } from '../../utils/examStorage';
-import { AttachmentList, InteractiveCommentSection } from '../AttachmentAndCommentSection';
+import { AttachmentList, InteractiveCommentSection, ItemActivityLogBar } from '../AttachmentAndCommentSection';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 
@@ -243,29 +243,20 @@ export const AnnouncementsPage: React.FC = () => {
               </p>
 
               {ann.attachments && ann.attachments.length > 0 && (
-                <AttachmentList attachments={ann.attachments} />
+                <AttachmentList attachments={ann.attachments} parentTargetId={`ann-${annId}`} />
               )}
+
+              {/* Automatic Student Interaction Bar (Xem, viết bài, tải) */}
+              <ItemActivityLogBar
+                targetId={`ann-${annId}`}
+                label="Danh sách Học sinh tương tác thông báo này (Tự động • Đúng danh sách lớp)"
+                compact
+              />
 
               {/* Interactive Comments Section with Word & Image Support */}
               <InteractiveCommentSection
                 targetId={`ann-${annId}`}
                 title="Trao đổi & Bình luận của Học sinh / Phụ huynh (Hỗ trợ gửi Word, Ảnh)"
-                initialComments={
-                  annId === 'ann-1'
-                    ? [
-                        {
-                          id: 'c-1',
-                          announcementId: 'ann-1',
-                          authorId: 'u-1',
-                          authorName: 'Trần Thị Mai (H9.1)',
-                          authorRole: 'student',
-                          content:
-                            'Dạ em cảm ơn Thầy, em sẽ ôn kỹ phần bài toán kim loại tác dụng axit ạ!',
-                          createdAt: '10/10/2026 19:20',
-                        },
-                      ]
-                    : []
-                }
               />
             </div>
           );

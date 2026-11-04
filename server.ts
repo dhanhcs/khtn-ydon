@@ -78,7 +78,36 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// 1b. Persistent App Settings & Logo store
+// 1b. Persistent App Settings & Logo store + automatic Favicon sync
+function syncFaviconFilesFromSettings(settingsObj: any) {
+  try {
+    const logoDataUrl = settingsObj?.logoUrl;
+    if (typeof logoDataUrl === 'string' && logoDataUrl.startsWith('data:image/')) {
+      const commaIdx = logoDataUrl.indexOf(',');
+      if (commaIdx > 0) {
+        const base64Data = logoDataUrl.slice(commaIdx + 1);
+        const buf = Buffer.from(base64Data, 'base64');
+        if (buf.length > 100) {
+          const publicDir = path.resolve(__dirname, 'public');
+          fs.mkdirSync(publicDir, { recursive: true });
+          fs.writeFileSync(path.join(publicDir, 'favicon.png'), buf);
+          fs.writeFileSync(path.join(publicDir, 'favicon.ico'), buf);
+          fs.writeFileSync(path.join(publicDir, 'apple-touch-icon.png'), buf);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('Could not sync favicon files from logoUrl:', err);
+  }
+}
+
+try {
+  if (fs.existsSync(SETTINGS_FILE)) {
+    const initialSettings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
+    syncFaviconFilesFromSettings(initialSettings);
+  }
+} catch {}
+
 app.get('/api/settings', (req, res) => {
   try {
     if (fs.existsSync(SETTINGS_FILE)) {
@@ -103,6 +132,7 @@ app.post('/api/settings', (req, res) => {
     }
     const merged = { ...existing, ...(req.body || {}) };
     fs.writeFileSync(SETTINGS_FILE, JSON.stringify(merged, null, 2), 'utf-8');
+    syncFaviconFilesFromSettings(merged);
     return res.json({ success: true, settings: merged });
   } catch (err: any) {
     console.error('Error saving app-settings.json:', err);
@@ -791,6 +821,10 @@ interface SyncConfigData {
   siteUrl?: string;
   netlifyToken?: string;
   netlifyBuildHookUrl?: string;
+  vercelSiteName?: string;
+  vercelToken?: string;
+  vercelUrl?: string;
+  lastVercelDeployedAt?: string;
   githubRepo?: string;
   githubToken?: string;
   githubBranch?: string;
@@ -809,6 +843,7 @@ function readSyncConfig(): SyncConfigData {
   } catch {}
   return {
     siteName: 'hoahoc-thcs-ndh',
+    vercelSiteName: 'hoahoc-thcs-ndh',
     githubBranch: 'main',
     autoSyncOnEdit: true,
     deployCount: 0,
@@ -1180,6 +1215,189 @@ app.post('/api/netlify/deploy-one-click', async (req, res) => {
   }
 });
 
+async function executeVercelDeployWithToken(
+  rawSiteName: string,
+  rawToken: string,
+  forceRebuild = false
+): Promise<{
+  siteName: string;
+  vercelUrl: string;
+  deployId: string;
+  deployedAt: string;
+}> {
+  const token = String(rawToken || '').trim();
+  if (!token) {
+    throw new Error('Vui lòng nhập mã Vercel Access Token (lấy tại vercel.com/account/tokens).');
+  }
+
+  const cleanSiteName =
+    String(rawSiteName || 'hoahoc-thcs-ndh')
+      .trim()
+      .toLowerCase()
+      .replace(/_/g, '-')
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 52) || 'hoahoc-thcs-ndh';
+
+  // Ensure dist/ is built and contains SPA vercel.json
+  await buildPrebuiltNetlifyZip(forceRebuild);
+  const distDir = path.resolve(__dirname, 'dist');
+
+  const filesPayload: { file: string; data: string; encoding: 'base64' }[] = [];
+  function collectDistFiles(curDir: string) {
+    const entries = fs.readdirSync(curDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(curDir, entry.name);
+      const relPath = path.relative(distDir, fullPath).replace(/\\/g, '/');
+      if (entry.isDirectory()) {
+        collectDistFiles(fullPath);
+      } else {
+        const buf = fs.readFileSync(fullPath);
+        filesPayload.push({
+          file: relPath,
+          data: buf.toString('base64'),
+          encoding: 'base64',
+        });
+      }
+    }
+  }
+  collectDistFiles(distDir);
+
+  const vHeaders: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  };
+
+  const deployRes = await fetch(
+    'https://api.vercel.com/v13/deployments?skipAutoDetectionConfirmation=1',
+    {
+      method: 'POST',
+      headers: vHeaders,
+      body: JSON.stringify({
+        name: cleanSiteName,
+        target: 'production',
+        files: filesPayload,
+        projectSettings: {
+          framework: null,
+          buildCommand: null,
+          outputDirectory: null,
+        },
+      }),
+    }
+  );
+
+  if (!deployRes.ok) {
+    const errText = await deployRes.text();
+    if (deployRes.status === 401 || deployRes.status === 403) {
+      throw new Error(
+        'Mã Vercel Token không hợp lệ hoặc đã hết hạn. Vui lòng tạo mã Token mới tại vercel.com/account/tokens (chọn Scope: Full Account).'
+      );
+    }
+    throw new Error(`Không thể đẩy bản build lên Vercel (${deployRes.status}): ${errText}`);
+  }
+
+  const deployData: any = await deployRes.json();
+
+  // Disable Vercel Authentication wall (ssoProtection) so students can access the public link directly
+  const projectTarget = deployData?.projectId || cleanSiteName;
+  const preferredShortDomain = `${cleanSiteName}.vercel.app`;
+  try {
+    await fetch(`https://api.vercel.com/v9/projects/${encodeURIComponent(projectTarget)}`, {
+      method: 'PATCH',
+      headers: vHeaders,
+      body: JSON.stringify({ ssoProtection: null }),
+    });
+  } catch {}
+
+  // Ensure the short domain (without team suffix like -ndh-2026) is registered on the project and bound to this deployment
+  let shortDomainBound = false;
+  try {
+    await fetch(`https://api.vercel.com/v10/projects/${encodeURIComponent(projectTarget)}/domains`, {
+      method: 'POST',
+      headers: vHeaders,
+      body: JSON.stringify({ name: preferredShortDomain }),
+    });
+  } catch {}
+
+  if (deployData?.id) {
+    try {
+      const bindRes = await fetch(
+        `https://api.vercel.com/v2/deployments/${encodeURIComponent(deployData.id)}/aliases`,
+        {
+          method: 'POST',
+          headers: vHeaders,
+          body: JSON.stringify({ alias: preferredShortDomain }),
+        }
+      );
+      if (bindRes.ok) {
+        shortDomainBound = true;
+      }
+    } catch {}
+  }
+
+  const aliasesList: string[] = Array.isArray(deployData?.alias) ? deployData.alias : [];
+  const exactMatchInAliases = aliasesList.find(
+    (a) => a.toLowerCase() === preferredShortDomain.toLowerCase()
+  );
+  const shortestAlias =
+    aliasesList.length > 0
+      ? [...aliasesList].sort((a, b) => a.length - b.length)[0]
+      : preferredShortDomain;
+
+  const chosenDomain = preferredShortDomain;
+  const finalVercelUrl = chosenDomain.startsWith('http')
+    ? chosenDomain
+    : `https://${chosenDomain}`;
+  const deployedAt = new Date().toISOString();
+  const currentCfg = readSyncConfig();
+
+  writeSyncConfig({
+    vercelSiteName: cleanSiteName,
+    vercelToken: token,
+    vercelUrl: finalVercelUrl,
+    lastVercelDeployedAt: deployedAt,
+    lastSourceMtime: getLatestSourceMtime(path.resolve(__dirname, 'src')),
+    deployCount: (currentCfg.deployCount || 0) + 1,
+  });
+
+  return {
+    siteName: cleanSiteName,
+    vercelUrl: finalVercelUrl,
+    deployId: deployData?.id || '',
+    deployedAt,
+  };
+}
+
+app.post('/api/vercel/deploy-one-click', async (req, res) => {
+  try {
+    const {
+      vercelSiteName = 'hoahoc_thcs_ndh',
+      vercelToken = '',
+      autoSyncOnEdit = true,
+    } = req.body || {};
+
+    const cleanToken = String(vercelToken || readSyncConfig().vercelToken || '').trim();
+    writeSyncConfig({
+      vercelSiteName: String(vercelSiteName || 'hoahoc_thcs_ndh').trim(),
+      vercelToken: cleanToken,
+      autoSyncOnEdit: Boolean(autoSyncOnEdit),
+    });
+
+    const result = await executeVercelDeployWithToken(vercelSiteName, cleanToken, false);
+    return res.json({
+      success: true,
+      ...result,
+      config: readSyncConfig(),
+    });
+  } catch (err: any) {
+    console.error('Vercel 1-click deploy error:', err);
+    return res.status(400).json({
+      error: err?.message || 'Lỗi khi xuất bản tự động lên Vercel.',
+    });
+  }
+});
+
 async function executeGithubPushSync(
   rawRepo: string,
   rawToken: string,
@@ -1411,7 +1629,7 @@ let autoSyncTimer: NodeJS.Timeout | null = null;
 async function checkAndRunAutoSyncOnEdit() {
   try {
     let cfg = readSyncConfig();
-    if (serverDb && !cfg.netlifyToken && !cfg.githubToken && !cfg.netlifyBuildHookUrl) {
+    if (serverDb && !cfg.netlifyToken && !cfg.vercelToken && !cfg.githubToken && !cfg.netlifyBuildHookUrl) {
       const snap = await getDoc(doc(serverDb, 'app_settings', 'netlify_sync_config'));
       if (snap.exists()) {
         cfg = writeSyncConfig(snap.data() as Partial<SyncConfigData>);
@@ -1424,19 +1642,39 @@ async function checkAndRunAutoSyncOnEdit() {
       return;
     }
 
+    if (cfg.vercelToken && (cfg.vercelSiteName || cfg.siteName)) {
+      try {
+        console.log('[Auto-Sync] Phát hiện chỉnh sửa trên Google AI Studio -> Đang tự động cập nhật lên Vercel...');
+        await executeVercelDeployWithToken(cfg.vercelSiteName || cfg.siteName || 'hoahoc-thcs-ndh', cfg.vercelToken, true);
+        console.log('[Auto-Sync] Đã tự động cập nhật bản mới lên Vercel:', readSyncConfig().vercelUrl);
+      } catch (vErr: any) {
+        console.warn('[Auto-Sync Vercel]:', vErr?.message || vErr);
+      }
+    }
+
     if (cfg.netlifyToken && cfg.siteName) {
-      console.log('[Auto-Sync] Phát hiện chỉnh sửa trên Google AI Studio -> Đang tự động cập nhật lên Netlify...');
-      await executeNetlifyDeployWithToken(cfg.siteName, cfg.netlifyToken, true);
-      console.log('[Auto-Sync] Đã tự động cập nhật bản mới lên:', readSyncConfig().siteUrl);
+      try {
+        console.log('[Auto-Sync] Phát hiện chỉnh sửa trên Google AI Studio -> Đang tự động cập nhật lên Netlify...');
+        await executeNetlifyDeployWithToken(cfg.siteName, cfg.netlifyToken, true);
+        console.log('[Auto-Sync] Đã tự động cập nhật bản mới lên:', readSyncConfig().siteUrl);
+      } catch (nErr: any) {
+        console.warn('[Auto-Sync Netlify]:', nErr?.message || nErr);
+      }
     } else if (cfg.netlifyBuildHookUrl && cfg.netlifyBuildHookUrl.startsWith('https://api.netlify.com/build_hooks/')) {
-      await fetch(cfg.netlifyBuildHookUrl, { method: 'POST' });
-      writeSyncConfig({ lastSourceMtime: currentSrcMtime, lastDeployedAt: new Date().toISOString() });
+      try {
+        await fetch(cfg.netlifyBuildHookUrl, { method: 'POST' });
+        writeSyncConfig({ lastSourceMtime: currentSrcMtime, lastDeployedAt: new Date().toISOString() });
+      } catch {}
     }
 
     if (cfg.githubToken && cfg.githubRepo) {
-      console.log('[Auto-Sync] Đang tự động đồng bộ mã nguồn lên GitHub:', cfg.githubRepo);
-      await executeGithubPushSync(cfg.githubRepo, cfg.githubToken, cfg.githubBranch || 'main');
-      writeSyncConfig({ lastSourceMtime: currentSrcMtime });
+      try {
+        console.log('[Auto-Sync] Đang tự động đồng bộ mã nguồn lên GitHub:', cfg.githubRepo);
+        await executeGithubPushSync(cfg.githubRepo, cfg.githubToken, cfg.githubBranch || 'main');
+        writeSyncConfig({ lastSourceMtime: currentSrcMtime });
+      } catch (gErr: any) {
+        console.warn('[Auto-Sync GitHub]:', gErr?.message || gErr);
+      }
     }
   } catch (e: any) {
     console.warn('[Auto-Sync] Bỏ qua đồng bộ tự động:', e?.message || e);

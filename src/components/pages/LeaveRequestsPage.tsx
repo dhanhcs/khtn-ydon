@@ -3,40 +3,25 @@ import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { CalendarOff, PlusCircle, CheckCircle, XCircle, Clock, AlertCircle, Phone, X, Send } from 'lucide-react';
 import { LeaveRequestItem } from '../../types';
+import { getActiveStudentRoster, verifyStudentInRoster } from '../../utils/studentRoster';
 
-export const SAMPLE_LEAVE_REQUESTS: LeaveRequestItem[] = [
-  {
-    id: 'lr-1',
-    studentName: 'Nguyễn Văn An',
-    classGroup: 'H8.1',
-    reason: 'Em bị sốt và đau họng cần đi khám bệnh tại bệnh viện, em xin phép Thầy nghỉ buổi học Hóa chiều thứ Hai ngày 13/10.',
-    dateFrom: '13/10/2026',
-    dateTo: '13/10/2026',
-    parentPhone: '0912 345 678',
-    status: 'approved',
-    adminNote: 'Thầy đã nhận đơn. Em nhớ giữ gìn sức khỏe và mượn vở bạn ghi chép lại phần cân bằng phương trình nhé.',
-    createdAt: '12/10/2026 18:30',
-  },
-  {
-    id: 'lr-2',
-    studentName: 'Lê Hoàng Nam',
-    classGroup: 'H8.2',
-    reason: 'Gia đình em có việc bận về quê thăm ông bà vào cuối tuần, xin phép Thầy cho em nghỉ học buổi chiều thứ Bảy.',
-    dateFrom: '18/10/2026',
-    dateTo: '18/10/2026',
-    parentPhone: '0987 654 321',
-    status: 'pending',
-    createdAt: '15/10/2026 09:15',
-  },
-];
+export const SAMPLE_LEAVE_REQUESTS: LeaveRequestItem[] = [];
 
 export const LeaveRequestsPage: React.FC = () => {
   const { classes, showToast } = useApp();
   const { isAdmin, userProfile } = useAuth();
 
   const [requests, setRequests] = useState<LeaveRequestItem[]>(() => {
-    const saved = localStorage.getItem('ndh_leave_requests');
-    return saved ? JSON.parse(saved) : SAMPLE_LEAVE_REQUESTS;
+    try {
+      const saved = localStorage.getItem('ndh_leave_requests');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((r: any) => r && r.id !== 'lr-1' && r.id !== 'lr-2');
+        }
+      }
+    } catch {}
+    return [];
   });
 
   const [showModal, setShowModal] = useState(false);
@@ -60,10 +45,26 @@ export const LeaveRequestsPage: React.FC = () => {
       return;
     }
 
+    let finalStudentName = form.studentName.trim();
+    let finalClassGroup = form.classGroup;
+    const roster = getActiveStudentRoster();
+    if (!isAdmin && roster.length > 0) {
+      const check = verifyStudentInRoster(finalStudentName, finalClassGroup, roster);
+      if (!check.isMatch || !check.matchedStudent) {
+        showToast(
+          'Họ và tên học sinh không khớp với Danh sách lớp. Vui lòng nhập đúng Họ và tên học sinh trong danh sách!',
+          'error'
+        );
+        return;
+      }
+      finalStudentName = check.matchedStudent.fullName;
+      finalClassGroup = check.matchedStudent.enrolledClass;
+    }
+
     const newItem: LeaveRequestItem = {
       id: 'lr-' + Date.now(),
-      studentName: form.studentName.trim(),
-      classGroup: form.classGroup,
+      studentName: finalStudentName,
+      classGroup: finalClassGroup,
       reason: form.reason.trim(),
       dateFrom: form.dateFrom,
       dateTo: form.dateTo || form.dateFrom,

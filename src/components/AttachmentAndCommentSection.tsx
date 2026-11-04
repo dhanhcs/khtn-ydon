@@ -28,11 +28,15 @@ import {
   recordMediaDownload,
   clearMediaActivityLog,
 } from '../utils/examStorage';
+import { getActiveStudentRoster, verifyStudentInRoster } from '../utils/studentRoster';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
 
 /**
- * Displays the list of users who viewed ("Đã xem") and downloaded ("Đã tải") a document, image, or video.
+ * Displays the list of official students from the roster who automatically interacted:
+ * - Đã xem (Viewed)
+ * - Đã viết bài / nộp bài (Wrote post / comment / submitted work)
+ * - Đã tải (Downloaded)
  */
 export const ItemActivityLogBar: React.FC<{
   targetId: string;
@@ -43,33 +47,50 @@ export const ItemActivityLogBar: React.FC<{
   const [log, setLog] = useState<MediaActivityLog>(() => getMediaActivityLog(targetId));
   const [showDetailModal, setShowDetailModal] = useState(false);
 
-  const actor = {
-    userName:
-      userProfile?.fullName ||
-      currentUser?.displayName ||
-      (isAdmin ? 'Thầy Nguyễn Đình Hành (QTV)' : 'Học sinh / Khách'),
-    userClass: userProfile?.enrolledClass || (isAdmin ? 'Quản trị' : undefined),
-    userRole: userProfile?.role || (isAdmin ? 'admin' : 'guest'),
-  };
+  const actorName = userProfile?.fullName || currentUser?.displayName || '';
+  const actorClass = userProfile?.enrolledClass || '';
+  const actorRole = userProfile?.role || (isAdmin ? 'admin' : isTeacher ? 'teacher' : 'guest');
+
+  // Automatically record view whenever an official student in the roster (or Admin/Teacher) views this item
+  useEffect(() => {
+    if (!targetId) return;
+    if (actorName || isAdmin || isTeacher) {
+      const updated = recordMediaView(targetId, {
+        userName: actorName,
+        userClass: actorClass,
+        userRole: actorRole,
+      });
+      setLog(updated);
+    } else {
+      setLog(getMediaActivityLog(targetId));
+    }
+  }, [targetId, actorName, actorClass, actorRole, isAdmin, isTeacher]);
 
   useEffect(() => {
-    setLog(getMediaActivityLog(targetId));
     const refresh = () => setLog(getMediaActivityLog(targetId));
     window.addEventListener('ndh-media-activity-updated', refresh);
-    return () => window.removeEventListener('ndh-media-activity-updated', refresh);
+    window.addEventListener('ndh-comments-updated', refresh);
+    window.addEventListener('ndh-hw-submissions-updated', refresh);
+    window.addEventListener('ndh-quiz-submissions-updated', refresh);
+    window.addEventListener('ndh-roster-updated', refresh);
+    return () => {
+      window.removeEventListener('ndh-media-activity-updated', refresh);
+      window.removeEventListener('ndh-comments-updated', refresh);
+      window.removeEventListener('ndh-hw-submissions-updated', refresh);
+      window.removeEventListener('ndh-quiz-submissions-updated', refresh);
+      window.removeEventListener('ndh-roster-updated', refresh);
+    };
   }, [targetId]);
 
   const formatEntryName = (e: { userName: string; userClass?: string }) =>
-    e.userClass && e.userClass !== 'Quản trị' ? `${e.userName} (${e.userClass})` : e.userName;
+    e.userClass && e.userClass !== 'Quản trị' && e.userClass !== 'Giáo viên'
+      ? `${e.userName} (${e.userClass})`
+      : e.userName;
 
   const views = log.views || [];
+  const writes = log.writes || [];
   const downloads = log.downloads || [];
-
-  const handleMarkViewed = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    const updated = recordMediaView(targetId, actor);
-    setLog(updated);
-  };
+  const totalInteractions = views.length + writes.length + downloads.length;
 
   return (
     <>
@@ -85,52 +106,58 @@ export const ItemActivityLogBar: React.FC<{
             </div>
           )}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-            {/* Views list */}
+            {/* Views list (Tự động) */}
             <div className="flex items-center gap-1.5 min-w-0">
               <Eye className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
               <span className="font-bold text-slate-800 shrink-0">
                 Đã xem ({views.length}):
               </span>
               {views.length === 0 ? (
-                <span className="text-slate-400 italic">Chưa có lượt xem</span>
+                <span className="text-slate-400 italic">Chưa có HS xem</span>
               ) : (
-                <span className="text-cyan-900 font-semibold truncate max-w-[260px] sm:max-w-[420px]">
+                <span className="text-cyan-900 font-semibold truncate max-w-[240px] sm:max-w-[360px]">
                   {views.slice(0, 5).map(formatEntryName).join(', ')}
-                  {views.length > 5 ? ` (+${views.length - 5} người khác)` : ''}
+                  {views.length > 5 ? ` (+${views.length - 5} HS khác)` : ''}
                 </span>
               )}
             </div>
 
-            {/* Downloads list */}
+            {/* Writes / Submissions / Comments list (Tự động) */}
+            <div className="flex items-center gap-1.5 min-w-0">
+              <MessageSquare className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+              <span className="font-bold text-slate-800 shrink-0">
+                Đã viết bài ({writes.length}):
+              </span>
+              {writes.length === 0 ? (
+                <span className="text-slate-400 italic">Chưa có HS viết bài</span>
+              ) : (
+                <span className="text-indigo-900 font-semibold truncate max-w-[240px] sm:max-w-[360px]">
+                  {writes.slice(0, 5).map(formatEntryName).join(', ')}
+                  {writes.length > 5 ? ` (+${writes.length - 5} HS khác)` : ''}
+                </span>
+              )}
+            </div>
+
+            {/* Downloads list (Tự động) */}
             <div className="flex items-center gap-1.5 min-w-0">
               <Download className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
               <span className="font-bold text-slate-800 shrink-0">
                 Đã tải ({downloads.length}):
               </span>
               {downloads.length === 0 ? (
-                <span className="text-slate-400 italic">Chưa có lượt tải</span>
+                <span className="text-slate-400 italic">Chưa có HS tải</span>
               ) : (
-                <span className="text-emerald-900 font-semibold truncate max-w-[260px] sm:max-w-[420px]">
+                <span className="text-emerald-900 font-semibold truncate max-w-[240px] sm:max-w-[360px]">
                   {downloads.slice(0, 5).map(formatEntryName).join(', ')}
-                  {downloads.length > 5 ? ` (+${downloads.length - 5} người khác)` : ''}
+                  {downloads.length > 5 ? ` (+${downloads.length - 5} HS khác)` : ''}
                 </span>
               )}
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
-          <button
-            type="button"
-            onClick={handleMarkViewed}
-            className="px-2.5 py-1 rounded-lg bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition"
-            title="Ghi nhận tên bạn đã xem nội dung này"
-          >
-            <CheckCircle2 className="w-3 h-3 text-cyan-600" />
-            <span>Ghi nhận Đã xem</span>
-          </button>
-
-          {(views.length > 0 || downloads.length > 0) && (
+        {totalInteractions > 0 && (
+          <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
             <button
               type="button"
               onClick={(e) => {
@@ -140,26 +167,31 @@ export const ItemActivityLogBar: React.FC<{
               className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 font-bold text-[11px] flex items-center gap-1 cursor-pointer transition"
             >
               <Users className="w-3 h-3 text-indigo-600" />
-              <span>Chi tiết ({views.length + downloads.length})</span>
+              <span>Chi tiết HS tương tác</span>
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Modal showing full list of Viewers and Downloaders */}
+      {/* Modal showing full list of Roster-Verified Viewers, Writers, and Downloaders */}
       {showDetailModal && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/75 backdrop-blur-xs"
           onClick={() => setShowDetailModal(false)}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl max-w-xl w-full p-6 border border-slate-200 max-h-[88vh] overflow-y-auto space-y-4"
+            className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full p-6 border border-slate-200 max-h-[88vh] overflow-y-auto space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-slate-200 pb-3">
-              <div className="flex items-center gap-2 font-black text-slate-900 text-base">
-                <Users className="w-5 h-5 text-cyan-600" />
-                <span>Danh Sách Người Đã Xem & Đã Tải</span>
+              <div>
+                <div className="flex items-center gap-2 font-black text-slate-900 text-base">
+                  <Users className="w-5 h-5 text-cyan-600" />
+                  <span>Danh Sách Học Sinh Tương Tác (Tự Động • Đúng Danh Sách Lớp)</span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Hệ thống tự động đối chiếu và chỉ hiển thị tên học sinh chính thức có trong danh sách lớp.
+                </p>
               </div>
               <button
                 type="button"
@@ -170,17 +202,17 @@ export const ItemActivityLogBar: React.FC<{
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
               {/* Viewers Column */}
               <div className="p-3.5 rounded-xl bg-cyan-50/60 border border-cyan-200 space-y-2">
                 <div className="font-extrabold text-cyan-900 flex items-center justify-between border-b border-cyan-200 pb-1.5">
                   <span className="flex items-center gap-1.5">
                     <Eye className="w-4 h-4 text-cyan-600" />
-                    Người đã xem ({views.length})
+                    Đã xem ({views.length})
                   </span>
                 </div>
                 {views.length === 0 ? (
-                  <p className="text-slate-400 italic py-3">Chưa có ai xem mục này.</p>
+                  <p className="text-slate-400 italic py-3">Chưa có học sinh xem mục này.</p>
                 ) : (
                   <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
                     {views.map((v, idx) => (
@@ -205,16 +237,50 @@ export const ItemActivityLogBar: React.FC<{
                 )}
               </div>
 
+              {/* Writers / Submitters Column */}
+              <div className="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-200 space-y-2">
+                <div className="font-extrabold text-indigo-900 flex items-center justify-between border-b border-indigo-200 pb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <MessageSquare className="w-4 h-4 text-indigo-600" />
+                    Đã viết bài / nộp bài ({writes.length})
+                  </span>
+                </div>
+                {writes.length === 0 ? (
+                  <p className="text-slate-400 italic py-3">Chưa có học sinh viết/nộp bài.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                    {writes.map((w, idx) => (
+                      <div
+                        key={idx}
+                        className="p-2 rounded-lg bg-white border border-indigo-100 flex items-center justify-between gap-2"
+                      >
+                        <div>
+                          <div className="font-bold text-slate-900">{w.userName}</div>
+                          {w.userClass && (
+                            <div className="text-[10px] font-semibold text-indigo-700">
+                              Lớp: {w.userClass}
+                            </div>
+                          )}
+                        </div>
+                        <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                          {w.timestamp}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Downloaders Column */}
               <div className="p-3.5 rounded-xl bg-emerald-50/60 border border-emerald-200 space-y-2">
                 <div className="font-extrabold text-emerald-900 flex items-center justify-between border-b border-emerald-200 pb-1.5">
                   <span className="flex items-center gap-1.5">
                     <Download className="w-4 h-4 text-emerald-600" />
-                    Người đã tải ({downloads.length})
+                    Đã tải ({downloads.length})
                   </span>
                 </div>
                 {downloads.length === 0 ? (
-                  <p className="text-slate-400 italic py-3">Chưa có ai tải tệp này.</p>
+                  <p className="text-slate-400 italic py-3">Chưa có học sinh tải tệp này.</p>
                 ) : (
                   <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
                     {downloads.map((d, idx) => (
@@ -241,7 +307,7 @@ export const ItemActivityLogBar: React.FC<{
             </div>
 
             <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-              {(isAdmin || isTeacher) ? (
+              {isAdmin || isTeacher ? (
                 <button
                   type="button"
                   onClick={() => {
@@ -733,19 +799,47 @@ export const InteractiveCommentSection: React.FC<{
       return;
     }
 
-    const displayAuthor =
-      isAdmin
-        ? 'Thầy Nguyễn Đình Hành (Quản trị)'
-        : authorNameInput.trim() ||
-          userProfile?.fullName ||
-          currentUser?.displayName ||
-          'Học sinh';
+    let resolvedAuthorName = '';
+    let resolvedAuthorClass = userProfile?.enrolledClass || '';
+
+    if (isAdmin) {
+      resolvedAuthorName = 'Thầy Nguyễn Đình Hành (Quản trị)';
+      resolvedAuthorClass = 'Quản trị';
+    } else {
+      const candidateName = (
+        userProfile?.fullName ||
+        authorNameInput.trim() ||
+        currentUser?.displayName ||
+        ''
+      )
+        .replace(/\(.*?\)/g, '')
+        .trim();
+
+      const roster = getActiveStudentRoster();
+      if (roster.length > 0) {
+        const check = verifyStudentInRoster(candidateName, resolvedAuthorClass || undefined, roster);
+        if (!check.isMatch || !check.matchedStudent) {
+          showToast(
+            'Chỉ học sinh có tên trong Danh sách lớp mới được viết bài / bình luận. Vui lòng đăng nhập tài khoản học sinh hoặc nhập đúng Họ và tên trong danh sách lớp!',
+            'error'
+          );
+          return;
+        }
+        resolvedAuthorName = check.matchedStudent.fullName;
+        resolvedAuthorClass = check.matchedStudent.enrolledClass;
+      } else if (!candidateName) {
+        showToast('Vui lòng đăng nhập tài khoản học sinh trước khi viết bình luận!', 'error');
+        return;
+      } else {
+        resolvedAuthorName = candidateName;
+      }
+    }
 
     const next = addCommentForTarget(targetId, {
       authorId: currentUser?.uid || 'student',
-      authorName: displayAuthor,
+      authorName: resolvedAuthorName,
       authorRole: isAdmin ? 'admin' : userProfile?.role || 'student',
-      authorClass: userProfile?.enrolledClass || '',
+      authorClass: resolvedAuthorClass,
       content: text.trim(),
       attachments: attachments.length > 0 ? attachments : undefined,
     });
@@ -753,7 +847,7 @@ export const InteractiveCommentSection: React.FC<{
     setComments(next);
     setText('');
     setAttachments([]);
-    showToast('Đã gửi bình luận thành công!', 'success');
+    showToast('Đã gửi bài viết / bình luận thành công!', 'success');
   };
 
   const handleDelete = (commentId?: string) => {
@@ -803,6 +897,9 @@ export const InteractiveCommentSection: React.FC<{
                     >
                       <User className="w-3 h-3 text-cyan-600" />
                       {c.authorName}
+                      {c.authorClass && !isTeacherComment && !c.authorName.includes('(')
+                        ? ` (${c.authorClass})`
+                        : ''}
                     </span>
                     {isTeacherComment && (
                       <span className="px-2 py-0.5 rounded-full bg-cyan-600 text-white text-[10px] font-bold">

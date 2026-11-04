@@ -295,6 +295,7 @@ export interface MediaActivityLog {
   targetId: string;
   views: MediaActivityEntry[];
   downloads: MediaActivityEntry[];
+  writes?: MediaActivityEntry[];
 }
 
 export interface YoutubeLessonLink {
@@ -323,6 +324,30 @@ export interface YoutubeChannelData {
   mainChannelDescription: string;
   globalLessonLinks: YoutubeLessonLink[];
   posts: YoutubePostItem[];
+}
+
+export interface OnlineMeetingLink {
+  id: string;
+  label: string;
+  url: string;
+  roomCode?: string;
+  passcode?: string;
+}
+
+export interface OnlineClassSessionItem {
+  id: string;
+  title: string;
+  classGroup: string;
+  openTimeText: string;
+  announcementContent: string;
+  primaryMeetingUrl: string;
+  roomCode?: string;
+  passcode?: string;
+  meetingLinks: OnlineMeetingLink[];
+  attachments?: FileAttachment[];
+  status: 'open' | 'scheduled' | 'closed';
+  author: string;
+  createdAt: string;
 }
 
 export interface LeaveRequestItem {

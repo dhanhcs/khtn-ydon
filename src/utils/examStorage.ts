@@ -16,10 +16,17 @@ import {
   YoutubeChannelData,
   YoutubeLessonLink,
   YoutubePostItem,
+  OnlineClassSessionItem,
+  OnlineMeetingLink,
 } from '../types';
 import mammoth from 'mammoth';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase/config';
+import {
+  getActiveStudentRoster,
+  verifyStudentInRoster,
+  normalizeVietnamese,
+} from './studentRoster';
 
 export const DEFAULT_EXAM_BANK: QuizItem[] = [
   {
@@ -875,79 +882,9 @@ export function evaluateScoreLabel(
 // EXAM RESULTS STORAGE & SYNCHRONIZATION (`ndh_exam_results`)
 // ============================================================================
 const EXAM_RESULTS_KEY = 'ndh_exam_results';
+const LEGACY_FAKE_RESULT_IDS = new Set(['r-1', 'r-2', 'r-3', 'r-4', 'r-5']);
 
-export const INITIAL_EXAM_RESULTS: ExamResultRecord[] = [
-  {
-    id: 'r-1',
-    studentName: 'Trần Thị Mai',
-    studentCode: 'NDH-H9-01',
-    classGroup: 'H9.1',
-    examName: 'Khảo Sát Chất Lượng Học Kỳ I - Đề 01',
-    examType: 'Kỳ thi / Khảo sát',
-    score: 9.75,
-    maxScore: 10,
-    rank: 1,
-    evaluated: 'Xuất sắc',
-    feedback: 'Tư duy phương trình hoàn hảo, giải bài tập tự luận vận dụng cao rất ngắn gọn và thông minh.',
-    gradedDate: '15/10/2026',
-  },
-  {
-    id: 'r-2',
-    studentName: 'Phạm Quỳnh Anh',
-    studentCode: 'NDH-HSG-04',
-    classGroup: 'Bồi dưỡng HSG cấp tỉnh, thành phố',
-    examName: 'Đề Thi Thử Học Sinh Giỏi Cấp Tỉnh, Thành Phố',
-    examType: 'Kỳ thi / Khảo sát',
-    score: 9.5,
-    maxScore: 10,
-    rank: 2,
-    evaluated: 'Xuất sắc',
-    feedback: 'Kỹ năng bảo toàn khối lượng và giải phương trình đại số xuất sắc.',
-    gradedDate: '15/10/2026',
-  },
-  {
-    id: 'r-3',
-    studentName: 'Nguyễn Văn An',
-    studentCode: 'NDH-H8-02',
-    classGroup: 'H8.1',
-    examName: 'Khảo Sát Giữa Kỳ Hóa 8 - Đề Số 02',
-    examType: 'Kỳ thi / Khảo sát',
-    score: 8.75,
-    maxScore: 10,
-    rank: 3,
-    evaluated: 'Giỏi',
-    feedback: 'Nắm vững bảng hóa trị và định luật bảo toàn khối lượng, cần cẩn thận hơn ở phép chia số mol.',
-    gradedDate: '14/10/2026',
-  },
-  {
-    id: 'r-4',
-    studentName: 'Hoàng Đức Minh',
-    studentCode: 'NDH-H9-08',
-    classGroup: 'H9.2',
-    examName: 'Khảo Sát Chất Lượng Học Kỳ I - Đề 01',
-    examType: 'Kỳ thi / Khảo sát',
-    score: 8.0,
-    maxScore: 10,
-    rank: 4,
-    evaluated: 'Giỏi',
-    feedback: 'Tiến bộ rõ rệt trong chuyên đề oxit axit tác dụng dung dịch bazơ.',
-    gradedDate: '14/10/2026',
-  },
-  {
-    id: 'r-5',
-    studentName: 'Lê Hoàng Nam',
-    studentCode: 'NDH-H8-12',
-    classGroup: 'H8.2',
-    examName: 'Khảo Sát Giữa Kỳ Hóa 8 - Đề Số 02',
-    examType: 'Kỳ thi / Khảo sát',
-    score: 7.25,
-    maxScore: 10,
-    rank: 5,
-    evaluated: 'Khá',
-    feedback: 'Cần ôn thêm cách tính nồng độ % và nồng độ mol của dung dịch.',
-    gradedDate: '12/10/2026',
-  },
-];
+export const INITIAL_EXAM_RESULTS: ExamResultRecord[] = [];
 
 export function recalculateRanks(records: ExamResultRecord[]): ExamResultRecord[] {
   const sorted = [...records].sort((a, b) => b.score - a.score);
@@ -964,13 +901,16 @@ export function getStoredExamResults(): ExamResultRecord[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return recalculateRanks(parsed);
+        const cleaned = parsed.filter(
+          (r: any) => r && r.id && !LEGACY_FAKE_RESULT_IDS.has(String(r.id))
+        );
+        return recalculateRanks(cleaned);
       }
     }
   } catch (e) {
     console.warn('Error reading exam results:', e);
   }
-  return INITIAL_EXAM_RESULTS;
+  return [];
 }
 
 export function saveExamResults(results: ExamResultRecord[]): ExamResultRecord[] {
@@ -1092,6 +1032,19 @@ export function saveQuizSubmission(submission: QuizSubmission): QuizSubmission[]
     feedback: item.feedback || 'Đã nộp bài kiểm tra trực tuyến.',
   });
 
+  // Automatically record student write/submission interaction
+  try {
+    const actor = {
+      userName: item.studentName,
+      userClass: item.classGroup,
+      userRole: 'student',
+    };
+    if (item.quizId) {
+      recordMediaWrite(item.quizId, actor);
+      recordMediaWrite(`quiz-${item.quizId}`, actor);
+    }
+  } catch {}
+
   return next;
 }
 
@@ -1180,6 +1133,20 @@ export function saveHomeworkSubmission(sub: HomeworkSubmission): HomeworkSubmiss
     { items: next, updatedAt: now },
     { merge: false }
   ).catch(() => {});
+
+  // Automatically record student homework submission interaction
+  try {
+    const actor = {
+      userName: sub.studentName,
+      userClass: sub.classGroup,
+      userRole: 'student',
+    };
+    if (sub.homeworkId) {
+      recordMediaWrite(sub.homeworkId, actor);
+      recordMediaWrite(`hw-${sub.homeworkId}`, actor);
+    }
+  } catch {}
+
   return next;
 }
 
@@ -1245,7 +1212,14 @@ export function getAllItemComments(): Record<string, AnnouncementComment[]> {
   try {
     const raw = localStorage.getItem(ITEM_COMMENTS_KEY);
     if (raw) {
-      return JSON.parse(raw) || {};
+      const parsed = JSON.parse(raw) || {};
+      // Filter out any legacy sample comment ID 'c-1'
+      for (const k of Object.keys(parsed)) {
+        if (Array.isArray(parsed[k])) {
+          parsed[k] = parsed[k].filter((c: any) => c && c.id !== 'c-1');
+        }
+      }
+      return parsed;
     }
   } catch {}
   return {};
@@ -1253,7 +1227,38 @@ export function getAllItemComments(): Record<string, AnnouncementComment[]> {
 
 export function getCommentsForTarget(targetId: string): AnnouncementComment[] {
   const all = getAllItemComments();
-  return all[targetId] || [];
+  const list = all[targetId] || [];
+  return filterCommentsByRoster(list);
+}
+
+function filterCommentsByRoster(comments: AnnouncementComment[]): AnnouncementComment[] {
+  const roster = getActiveStudentRoster();
+  return comments
+    .filter((c) => c && c.id !== 'c-1')
+    .map((c) => {
+      if (
+        c.authorRole === 'admin' ||
+        c.authorRole === 'teacher' ||
+        c.authorName.toLowerCase().includes('thầy') ||
+        c.authorName.toLowerCase().includes('quản trị')
+      ) {
+        return c;
+      }
+      if (roster.length > 0) {
+        const cleanName = c.authorName.replace(/\(.*?\)/g, '').trim();
+        const check = verifyStudentInRoster(cleanName, c.authorClass, roster);
+        if (check.isMatch && check.matchedStudent) {
+          return {
+            ...c,
+            authorName: check.matchedStudent.fullName,
+            authorClass: check.matchedStudent.enrolledClass,
+          };
+        }
+        return null;
+      }
+      return c;
+    })
+    .filter(Boolean) as AnnouncementComment[];
 }
 
 export function addCommentForTarget(
@@ -1261,8 +1266,22 @@ export function addCommentForTarget(
   comment: Omit<AnnouncementComment, 'id' | 'announcementId' | 'createdAt'>
 ): AnnouncementComment[] {
   const all = getAllItemComments();
+  const roster = getActiveStudentRoster();
+  let resolvedName = comment.authorName.replace(/\(.*?\)/g, '').trim();
+  let resolvedClass = comment.authorClass || '';
+
+  if (comment.authorRole !== 'admin' && comment.authorRole !== 'teacher' && roster.length > 0) {
+    const check = verifyStudentInRoster(resolvedName, resolvedClass, roster);
+    if (check.isMatch && check.matchedStudent) {
+      resolvedName = check.matchedStudent.fullName;
+      resolvedClass = check.matchedStudent.enrolledClass;
+    }
+  }
+
   const newComment: AnnouncementComment = {
     ...comment,
+    authorName: resolvedName,
+    authorClass: resolvedClass,
     id: 'cmt-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
     announcementId: targetId,
     createdAt: new Date().toLocaleString('vi-VN'),
@@ -1282,7 +1301,25 @@ export function addCommentForTarget(
     { commentsMap: all, updatedAt: now },
     { merge: false }
   ).catch(() => {});
-  return nextList;
+
+  // Automatically record write interaction in activity log
+  try {
+    recordMediaWrite(targetId, {
+      userName: resolvedName,
+      userClass: resolvedClass,
+      userRole: comment.authorRole || 'student',
+    });
+    const baseId = targetId.replace(/^(hw-|ann-|mat-|exp-|yt-post-|online-|quiz-)/, '');
+    if (baseId && baseId !== targetId) {
+      recordMediaWrite(baseId, {
+        userName: resolvedName,
+        userClass: resolvedClass,
+        userRole: comment.authorRole || 'student',
+      });
+    }
+  } catch {}
+
+  return filterCommentsByRoster(nextList);
 }
 
 export function deleteCommentForTarget(
@@ -1305,55 +1342,203 @@ export function deleteCommentForTarget(
     { commentsMap: all, updatedAt: now },
     { merge: false }
   ).catch(() => {});
-  return nextList;
+  return filterCommentsByRoster(nextList);
 }
 
 export const getSavedHomeworkSubmissions = getStoredHomeworkSubmissions;
 export const upsertExamResult = upsertExamResultRecord;
 
 // ============================================================================
-// MEDIA VIEW & DOWNLOAD ACTIVITY TRACKER (`ndh_media_activity_logs`)
-// Tracks who viewed and who downloaded documents, images, videos across devices
+// MEDIA VIEW, WRITE & DOWNLOAD ACTIVITY TRACKER (`ndh_media_activity_logs`)
+// 100% Automatic & Roster-Verified: Only real students in the uploaded roster
+// (and Admin/Teacher) are recorded and displayed. Zero fabricated names.
 // ============================================================================
 const MEDIA_ACTIVITY_KEY = 'ndh_media_activity_logs';
+
+const GENERIC_GUEST_NAMES = new Set([
+  'hocsinhkhach',
+  'khach',
+  'khachchixem',
+  'hocsinh',
+  'thanhvien',
+  'anonymous',
+  'guest',
+]);
+
+export function resolveVerifiedActor(customActor?: {
+  userName?: string;
+  userClass?: string;
+  userRole?: string;
+}): {
+  userName: string;
+  userClass?: string;
+  userRole?: string;
+  isValid: boolean;
+} {
+  try {
+    // 1. Check if Admin/Teacher
+    const adminRole = localStorage.getItem('ndh_admin_master_role');
+    if (
+      customActor?.userRole === 'admin' ||
+      adminRole === 'admin' ||
+      (customActor?.userName &&
+        (customActor.userName.toLowerCase().includes('nguyễn đình hành') ||
+          customActor.userName.toLowerCase().includes('qtv')))
+    ) {
+      return {
+        userName: 'Thầy Nguyễn Đình Hành (QTV)',
+        userClass: 'Quản trị',
+        userRole: 'admin',
+        isValid: true,
+      };
+    }
+    if (customActor?.userRole === 'teacher' || adminRole === 'teacher') {
+      return {
+        userName: 'Giáo viên Bộ môn',
+        userClass: 'Giáo viên',
+        userRole: 'teacher',
+        isValid: true,
+      };
+    }
+
+    // 2. Get candidate student name & class from customActor or active logged-in student profile
+    let candidateName = (customActor?.userName || '').replace(/\(.*?\)/g, '').trim();
+    let candidateClass = (customActor?.userClass || '').trim();
+
+    if (!candidateName || GENERIC_GUEST_NAMES.has(normalizeVietnamese(candidateName))) {
+      const rawStudent = localStorage.getItem('ndh_active_student_profile_v1');
+      if (rawStudent) {
+        const parsed = JSON.parse(rawStudent);
+        if (parsed && parsed.fullName) {
+          candidateName = String(parsed.fullName).replace(/\(.*?\)/g, '').trim();
+          candidateClass = parsed.enrolledClass ? String(parsed.enrolledClass).trim() : candidateClass;
+        }
+      }
+    }
+
+    const normCandidate = normalizeVietnamese(candidateName);
+    if (!normCandidate || GENERIC_GUEST_NAMES.has(normCandidate)) {
+      return { userName: '', isValid: false };
+    }
+
+    // 3. Strictly verify against the uploaded Student Roster (`getActiveStudentRoster()`)
+    const roster = getActiveStudentRoster();
+    if (roster.length > 0) {
+      const check = verifyStudentInRoster(candidateName, candidateClass || undefined, roster);
+      if (check.isMatch && check.matchedStudent) {
+        return {
+          userName: check.matchedStudent.fullName,
+          userClass: check.matchedStudent.enrolledClass,
+          userRole: 'student',
+          isValid: true,
+        };
+      }
+      // Fallback: match by normalized full name in roster even if class wasn't passed
+      const nameOnlyMatch = roster.find(
+        (s) => normalizeVietnamese(s.fullName) === normCandidate
+      );
+      if (nameOnlyMatch) {
+        return {
+          userName: nameOnlyMatch.fullName,
+          userClass: nameOnlyMatch.enrolledClass,
+          userRole: 'student',
+          isValid: true,
+        };
+      }
+      // Not in roster -> do NOT fabricate or record unverified guest name
+      return { userName: '', isValid: false };
+    }
+
+    // If roster is currently empty, still allow logged-in registered student from ndh_registered_users
+    return {
+      userName: candidateName,
+      userClass: candidateClass || undefined,
+      userRole: 'student',
+      isValid: true,
+    };
+  } catch {
+    return { userName: '', isValid: false };
+  }
+}
 
 export function getCurrentActiveActor(): {
   userName: string;
   userClass?: string;
   userRole?: string;
 } {
-  try {
-    const adminRole = localStorage.getItem('ndh_admin_master_role');
-    if (adminRole === 'admin') {
-      return {
-        userName: 'Thầy Nguyễn Đình Hành (QTV)',
-        userClass: 'Quản trị',
-        userRole: 'admin',
-      };
-    }
-    if (adminRole === 'teacher') {
-      return {
-        userName: 'Giáo viên Bộ môn',
-        userClass: 'Giáo viên',
-        userRole: 'teacher',
-      };
-    }
-    const rawStudent = localStorage.getItem('ndh_active_student_profile_v1');
-    if (rawStudent) {
-      const parsed = JSON.parse(rawStudent);
-      if (parsed && parsed.fullName) {
-        return {
-          userName: String(parsed.fullName).trim(),
-          userClass: parsed.enrolledClass ? String(parsed.enrolledClass).trim() : undefined,
-          userRole: parsed.role || 'student',
-        };
-      }
-    }
-  } catch {}
+  const resolved = resolveVerifiedActor();
+  if (resolved.isValid) {
+    return {
+      userName: resolved.userName,
+      userClass: resolved.userClass,
+      userRole: resolved.userRole,
+    };
+  }
   return {
-    userName: 'Học sinh / Khách',
+    userName: '',
     userRole: 'guest',
   };
+}
+
+function filterVerifiedEntries(entries: MediaActivityEntry[] = []): MediaActivityEntry[] {
+  const roster = getActiveStudentRoster();
+  const seen = new Set<string>();
+  const result: MediaActivityEntry[] = [];
+
+  for (const item of entries) {
+    if (!item || !item.userName) continue;
+    const rawName = String(item.userName).replace(/\(.*?\)/g, '').trim();
+    const norm = normalizeVietnamese(rawName);
+    if (!norm || GENERIC_GUEST_NAMES.has(norm)) continue;
+
+    // Keep Admin / Teacher
+    if (
+      item.userRole === 'admin' ||
+      item.userRole === 'teacher' ||
+      rawName.toLowerCase().includes('nguyễn đình hành') ||
+      rawName.toLowerCase().includes('qtv')
+    ) {
+      const key = `admin-${norm}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({
+          ...item,
+          userName: 'Thầy Nguyễn Đình Hành (QTV)',
+          userClass: 'Quản trị',
+          userRole: 'admin',
+        });
+      }
+      continue;
+    }
+
+    // Verify against real Student Roster when roster has students
+    if (roster.length > 0) {
+      const check = verifyStudentInRoster(rawName, item.userClass, roster);
+      const matched =
+        check.matchedStudent ||
+        roster.find((s) => normalizeVietnamese(s.fullName) === norm);
+      if (!matched) continue; // Strictly exclude any name not in the student roster!
+
+      const key = `${normalizeVietnamese(matched.fullName)}-${matched.enrolledClass}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({
+          userName: matched.fullName,
+          userClass: matched.enrolledClass,
+          userRole: 'student',
+          timestamp: item.timestamp || '',
+        });
+      }
+    } else {
+      const key = `${norm}-${item.userClass || ''}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push(item);
+      }
+    }
+  }
+
+  return result;
 }
 
 export function getAllMediaActivityLogs(): Record<string, MediaActivityLog> {
@@ -1368,13 +1553,73 @@ export function getAllMediaActivityLogs(): Record<string, MediaActivityLog> {
 
 export function getMediaActivityLog(targetId: string): MediaActivityLog {
   const all = getAllMediaActivityLogs();
-  return (
-    all[targetId] || {
-      targetId,
-      views: [],
-      downloads: [],
+  const rawLog = all[targetId] || {
+    targetId,
+    views: [],
+    downloads: [],
+    writes: [],
+  };
+
+  // Automatically aggregate "Viết bài / Nộp bài / Bình luận" from comments, homework submissions, and quiz submissions for this targetId
+  const derivedWrites: MediaActivityEntry[] = [...(rawLog.writes || [])];
+  try {
+    const baseId = targetId.replace(/^(att-|hw-|ann-|mat-|exp-|yt-post-|online-|quiz-)/, '');
+    const commentTargets = [targetId, `hw-${baseId}`, `ann-${baseId}`, baseId];
+    const allComments = getAllItemComments();
+    for (const ct of commentTargets) {
+      const cList = allComments[ct] || [];
+      for (const c of cList) {
+        if (c && c.id !== 'c-1' && c.authorName) {
+          derivedWrites.push({
+            userName: c.authorName,
+            userClass: c.authorClass,
+            userRole: c.authorRole,
+            timestamp: c.createdAt || '',
+          });
+        }
+      }
     }
-  );
+
+    const hwSubs = getStoredHomeworkSubmissions();
+    for (const sub of hwSubs) {
+      if (sub.homeworkId === targetId || sub.homeworkId === baseId || `hw-${sub.homeworkId}` === targetId) {
+        derivedWrites.push({
+          userName: sub.studentName,
+          userClass: sub.classGroup,
+          userRole: 'student',
+          timestamp: sub.submittedAt || '',
+        });
+      }
+    }
+
+    const quizSubs = getStoredQuizSubmissions();
+    for (const qSub of quizSubs) {
+      if (qSub.quizId === targetId || qSub.quizId === baseId || `quiz-${qSub.quizId}` === targetId) {
+        derivedWrites.push({
+          userName: qSub.studentName,
+          userClass: qSub.classGroup,
+          userRole: 'student',
+          timestamp: qSub.submittedAt || '',
+        });
+      }
+    }
+  } catch {}
+
+  const verifiedWrites = filterVerifiedEntries(derivedWrites);
+  const verifiedDownloads = filterVerifiedEntries(rawLog.downloads || []);
+  // Anyone who wrote/submitted or downloaded also viewed the item
+  const combinedViews = filterVerifiedEntries([
+    ...(rawLog.views || []),
+    ...verifiedWrites,
+    ...verifiedDownloads,
+  ]);
+
+  return {
+    targetId,
+    views: combinedViews,
+    downloads: verifiedDownloads,
+    writes: verifiedWrites,
+  };
 }
 
 function saveAllMediaActivityLogs(all: Record<string, MediaActivityLog>): void {
@@ -1393,83 +1638,152 @@ function saveAllMediaActivityLogs(all: Record<string, MediaActivityLog>): void {
 
 export function recordMediaView(
   targetId: string,
-  customActor?: { userName: string; userClass?: string; userRole?: string }
+  customActor?: { userName?: string; userClass?: string; userRole?: string }
 ): MediaActivityLog {
-  if (!targetId) return { targetId: '', views: [], downloads: [] };
-  const actor = customActor?.userName ? customActor : getCurrentActiveActor();
+  if (!targetId) return { targetId: '', views: [], downloads: [], writes: [] };
+  const resolved = resolveVerifiedActor(customActor);
+  if (!resolved.isValid || !resolved.userName) {
+    return getMediaActivityLog(targetId);
+  }
+
   const all = getAllMediaActivityLogs();
   const current: MediaActivityLog = all[targetId] || {
     targetId,
     views: [],
     downloads: [],
+    writes: [],
   };
 
+  // Check if this exact student is already the most recent viewer to avoid redundant Firestore writes on re-renders
+  const existingFirst = current.views?.[0];
+  if (
+    existingFirst &&
+    normalizeVietnamese(existingFirst.userName) === normalizeVietnamese(resolved.userName) &&
+    (existingFirst.userClass || '') === (resolved.userClass || '')
+  ) {
+    return getMediaActivityLog(targetId);
+  }
+
   const entry: MediaActivityEntry = {
-    userName: actor.userName,
-    userClass: actor.userClass,
-    userRole: actor.userRole,
+    userName: resolved.userName,
+    userClass: resolved.userClass,
+    userRole: resolved.userRole,
     timestamp: new Date().toLocaleString('vi-VN'),
   };
 
-  // Deduplicate by userName + userClass so the same user doesn't flood the list, keeping latest timestamp first
   const filteredViews = (current.views || []).filter(
     (v) =>
       !(
-        v.userName.toLowerCase() === entry.userName.toLowerCase() &&
+        normalizeVietnamese(v.userName) === normalizeVietnamese(entry.userName) &&
         (v.userClass || '') === (entry.userClass || '')
       )
   );
   const updatedLog: MediaActivityLog = {
     ...current,
-    views: [entry, ...filteredViews].slice(0, 150),
+    views: [entry, ...filteredViews].slice(0, 200),
   };
   all[targetId] = updatedLog;
   saveAllMediaActivityLogs(all);
-  return updatedLog;
+  return getMediaActivityLog(targetId);
 }
 
-export function recordMediaDownload(
+export function recordMediaWrite(
   targetId: string,
-  customActor?: { userName: string; userClass?: string; userRole?: string }
+  customActor?: { userName?: string; userClass?: string; userRole?: string }
 ): MediaActivityLog {
-  if (!targetId) return { targetId: '', views: [], downloads: [] };
-  const actor = customActor?.userName ? customActor : getCurrentActiveActor();
+  if (!targetId) return { targetId: '', views: [], downloads: [], writes: [] };
+  const resolved = resolveVerifiedActor(customActor);
+  if (!resolved.isValid || !resolved.userName) {
+    return getMediaActivityLog(targetId);
+  }
+
   const all = getAllMediaActivityLogs();
   const current: MediaActivityLog = all[targetId] || {
     targetId,
     views: [],
     downloads: [],
+    writes: [],
   };
 
   const entry: MediaActivityEntry = {
-    userName: actor.userName,
-    userClass: actor.userClass,
-    userRole: actor.userRole,
+    userName: resolved.userName,
+    userClass: resolved.userClass,
+    userRole: resolved.userRole,
+    timestamp: new Date().toLocaleString('vi-VN'),
+  };
+
+  const filteredWrites = (current.writes || []).filter(
+    (w) =>
+      !(
+        normalizeVietnamese(w.userName) === normalizeVietnamese(entry.userName) &&
+        (w.userClass || '') === (entry.userClass || '')
+      )
+  );
+  const filteredViews = (current.views || []).filter(
+    (v) =>
+      !(
+        normalizeVietnamese(v.userName) === normalizeVietnamese(entry.userName) &&
+        (v.userClass || '') === (entry.userClass || '')
+      )
+  );
+
+  const updatedLog: MediaActivityLog = {
+    ...current,
+    views: [entry, ...filteredViews].slice(0, 200),
+    writes: [entry, ...filteredWrites].slice(0, 200),
+  };
+  all[targetId] = updatedLog;
+  saveAllMediaActivityLogs(all);
+  return getMediaActivityLog(targetId);
+}
+
+export function recordMediaDownload(
+  targetId: string,
+  customActor?: { userName?: string; userClass?: string; userRole?: string }
+): MediaActivityLog {
+  if (!targetId) return { targetId: '', views: [], downloads: [], writes: [] };
+  const resolved = resolveVerifiedActor(customActor);
+  if (!resolved.isValid || !resolved.userName) {
+    return getMediaActivityLog(targetId);
+  }
+
+  const all = getAllMediaActivityLogs();
+  const current: MediaActivityLog = all[targetId] || {
+    targetId,
+    views: [],
+    downloads: [],
+    writes: [],
+  };
+
+  const entry: MediaActivityEntry = {
+    userName: resolved.userName,
+    userClass: resolved.userClass,
+    userRole: resolved.userRole,
     timestamp: new Date().toLocaleString('vi-VN'),
   };
 
   const filteredDownloads = (current.downloads || []).filter(
     (d) =>
       !(
-        d.userName.toLowerCase() === entry.userName.toLowerCase() &&
+        normalizeVietnamese(d.userName) === normalizeVietnamese(entry.userName) &&
         (d.userClass || '') === (entry.userClass || '')
       )
   );
   const filteredViews = (current.views || []).filter(
     (v) =>
       !(
-        v.userName.toLowerCase() === entry.userName.toLowerCase() &&
+        normalizeVietnamese(v.userName) === normalizeVietnamese(entry.userName) &&
         (v.userClass || '') === (entry.userClass || '')
       )
   );
   const updatedLog: MediaActivityLog = {
     ...current,
-    views: [entry, ...filteredViews].slice(0, 150),
-    downloads: [entry, ...filteredDownloads].slice(0, 150),
+    views: [entry, ...filteredViews].slice(0, 200),
+    downloads: [entry, ...filteredDownloads].slice(0, 200),
   };
   all[targetId] = updatedLog;
   saveAllMediaActivityLogs(all);
-  return updatedLog;
+  return getMediaActivityLog(targetId);
 }
 
 export function clearMediaActivityLog(targetId: string): void {
@@ -1847,6 +2161,123 @@ export function saveYoutubeChannelData(data: YoutubeChannelData): YoutubeChannel
   return data;
 }
 
+// ============================================================================
+// ONLINE CLASS SESSIONS & ROOM LINKS STORAGE (`ndh_online_class_sessions`)
+// ============================================================================
+const ONLINE_CLASS_SESSIONS_KEY = 'ndh_online_class_sessions';
+
+export const DEFAULT_ONLINE_CLASS_SESSIONS: OnlineClassSessionItem[] = [
+  {
+    id: 'online-1',
+    title: 'Thông Báo Mở Phòng Học Trực Tuyến: Bồi Dưỡng HSG & Chuyên Đề Hóa Học Nâng Cao',
+    classGroup: 'Tất cả các lớp',
+    openTimeText: 'Mở phòng lúc 19h00 - Bắt đầu học 19h15 (Thứ 3, Thứ 5 & Chủ Nhật hàng tuần)',
+    announcementContent:
+      'Thầy Nguyễn Đình Hành thông báo thời gian mở phòng học trực tuyến chuyên đề Phương pháp bảo toàn và Giải đề thi Học sinh giỏi cấp tỉnh, thành phố. Các em chuẩn bị sẵn vở ghi, máy tính cầm tay và bấm nút "Vào học" bên dưới để nhận đường link phòng học trực tuyến do Thầy đăng.',
+    primaryMeetingUrl: 'https://meet.google.com/ndh-chem-live',
+    roomCode: 'meet.google.com/ndh-chem-live',
+    passcode: 'NDH2026',
+    meetingLinks: [
+      {
+        id: 'ml-1',
+        label: 'Link Phòng Học Chính (Google Meet HD)',
+        url: 'https://meet.google.com/ndh-chem-live',
+        roomCode: 'ndh-chem-live',
+      },
+      {
+        id: 'ml-2',
+        label: 'Link Phòng Học Dự Phòng (Zoom Trực Tuyến)',
+        url: 'https://zoom.us/j/9882752888',
+        roomCode: '988 275 2888',
+        passcode: '123456',
+      },
+    ],
+    attachments: [],
+    status: 'open',
+    author: 'Thầy Nguyễn Đình Hành',
+    createdAt: new Date().toLocaleDateString('vi-VN'),
+  },
+  {
+    id: 'online-2',
+    title: 'Thông Báo Mở Phòng Học Trực Tuyến: Ôn Tập Trọng Tâm Hóa Học Khối 8 & Khối 9',
+    classGroup: 'H9.1',
+    openTimeText: 'Mở phòng lúc 17h15 - Học từ 17h30 đến 19h00 (Thứ 2 - Thứ 4 - Thứ 6)',
+    announcementContent:
+      'Buổi học trực tuyến củng cố chuỗi phản ứng vô cơ, nhận biết các hợp chất và giải bài tập nồng độ dung dịch. Học sinh bấm nút "Vào học" để hiển thị đường link vào lớp trực tuyến.',
+    primaryMeetingUrl: 'https://meet.google.com/ndh-hoa89-room',
+    roomCode: 'meet.google.com/ndh-hoa89-room',
+    passcode: '',
+    meetingLinks: [
+      {
+        id: 'ml-3',
+        label: 'Link Vào Học Trực Tiếp Khối 8 & 9 (Google Meet)',
+        url: 'https://meet.google.com/ndh-hoa89-room',
+        roomCode: 'ndh-hoa89-room',
+      },
+    ],
+    attachments: [],
+    status: 'open',
+    author: 'Thầy Nguyễn Đình Hành',
+    createdAt: new Date().toLocaleDateString('vi-VN'),
+  },
+];
+
+export function getStoredOnlineSessions(): OnlineClassSessionItem[] {
+  try {
+    const raw = localStorage.getItem(ONLINE_CLASS_SESSIONS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  return DEFAULT_ONLINE_CLASS_SESSIONS;
+}
+
+export function saveAllOnlineSessions(
+  items: OnlineClassSessionItem[]
+): OnlineClassSessionItem[] {
+  const now = Date.now();
+  try {
+    localStorage.setItem(ONLINE_CLASS_SESSIONS_KEY, JSON.stringify(items));
+    localStorage.setItem(ONLINE_CLASS_SESSIONS_KEY + '_updated_at', String(now));
+    window.dispatchEvent(new CustomEvent('ndh-online-sessions-updated'));
+  } catch {}
+  setDoc(
+    doc(db, 'app_settings', 'online_class_sessions'),
+    { items, updatedAt: now },
+    { merge: false }
+  ).catch(() => {});
+  return items;
+}
+
+export function saveOnlineSessionItem(
+  item: OnlineClassSessionItem
+): OnlineClassSessionItem[] {
+  const current = getStoredOnlineSessions();
+  const id = item.id || `online-${Date.now()}`;
+  const normalized: OnlineClassSessionItem = {
+    ...item,
+    id,
+    author: item.author || 'Thầy Nguyễn Đình Hành',
+    createdAt: item.createdAt || new Date().toLocaleDateString('vi-VN'),
+  };
+  const existingIdx = current.findIndex((s) => s.id === id);
+  let next: OnlineClassSessionItem[];
+  if (existingIdx >= 0) {
+    next = [...current];
+    next[existingIdx] = normalized;
+  } else {
+    next = [normalized, ...current];
+  }
+  return saveAllOnlineSessions(next);
+}
+
+export function deleteOnlineSessionItem(id: string): OnlineClassSessionItem[] {
+  const current = getStoredOnlineSessions();
+  const next = current.filter((s) => s.id !== id);
+  return saveAllOnlineSessions(next);
+}
+
 // Real-time Cloud Firestore listeners for Exams, Results, Submissions, Comments, Materials, Experiments, YouTube & Activity Logs
 let examCloudListenersReady = false;
 export function initExamCloudListeners() {
@@ -1914,6 +2345,12 @@ export function initExamCloudListeners() {
     VIDEO_EXPERIMENTS_KEY,
     'ndh-experiments-updated',
     getStoredExperiments
+  );
+  syncListDoc(
+    'online_class_sessions',
+    ONLINE_CLASS_SESSIONS_KEY,
+    'ndh-online-sessions-updated',
+    getStoredOnlineSessions
   );
 
   // Sync YouTube Channel Data

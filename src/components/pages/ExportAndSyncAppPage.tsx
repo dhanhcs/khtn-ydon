@@ -31,6 +31,10 @@ interface SyncConfigState {
   siteUrl: string;
   netlifyToken: string;
   netlifyBuildHookUrl: string;
+  vercelSiteName: string;
+  vercelToken: string;
+  vercelUrl: string;
+  lastVercelDeployedAt: string;
   githubRepo: string;
   githubToken: string;
   githubBranch: string;
@@ -56,6 +60,10 @@ export const ExportAndSyncAppPage: React.FC = () => {
           siteUrl: '',
           netlifyToken: '',
           netlifyBuildHookUrl: '',
+          vercelSiteName: 'hoahoc_thcs_ndh',
+          vercelToken: '',
+          vercelUrl: '',
+          lastVercelDeployedAt: '',
           githubRepo: '',
           githubToken: '',
           githubBranch: 'main',
@@ -76,6 +84,13 @@ export const ExportAndSyncAppPage: React.FC = () => {
           : '',
       netlifyToken: '',
       netlifyBuildHookUrl: '',
+      vercelSiteName: 'hoahoc_thcs_ndh',
+      vercelToken: '',
+      vercelUrl:
+        settings.customDomainUrl && settings.customDomainUrl.includes('.vercel.app')
+          ? settings.customDomainUrl
+          : '',
+      lastVercelDeployedAt: '',
       githubRepo: '',
       githubToken: '',
       githubBranch: 'main',
@@ -89,10 +104,13 @@ export const ExportAndSyncAppPage: React.FC = () => {
   const [downloadingDropZip, setDownloadingDropZip] = useState(false);
   const [downloadingGithubZip, setDownloadingGithubZip] = useState(false);
   const [deployingNetlify, setDeployingNetlify] = useState(false);
+  const [deployingVercel, setDeployingVercel] = useState(false);
   const [pushingGithub, setPushingGithub] = useState(false);
   const [savingAutoSync, setSavingAutoSync] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedVercelLink, setCopiedVercelLink] = useState(false);
   const [deployError, setDeployError] = useState<string | null>(null);
+  const [vercelError, setVercelError] = useState<string | null>(null);
   const [githubError, setGithubError] = useState<string | null>(null);
 
   // Load saved sync config from backend & Cloud Firestore on mount
@@ -277,6 +295,61 @@ export const ExportAndSyncAppPage: React.FC = () => {
     }
   };
 
+  // Công cụ Mới: Xuất bản Tự động 1 Chạm lên VERCEL (.vercel.app) bằng Mã Token (Không cần GitHub)
+  const handleOneClickVercelDeploy = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setVercelError(null);
+
+    const cleanToken = (config.vercelToken || '').trim();
+    if (!cleanToken) {
+      const msg =
+        'Vui lòng bấm "🔑 Lấy mã Token Vercel" để tạo 1 mã Access Token trên Vercel rồi dán vào ô trước khi xuất bản.';
+      setVercelError(msg);
+      showToast(msg, 'error');
+      return;
+    }
+
+    setDeployingVercel(true);
+    try {
+      const res = await fetch('/api/vercel/deploy-one-click', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          vercelSiteName: (config.vercelSiteName || config.siteName || 'hoahoc_thcs_ndh').trim(),
+          vercelToken: cleanToken,
+          autoSyncOnEdit: config.autoSyncOnEdit,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || 'Không thể đẩy bản build lên Vercel.');
+      }
+
+      const liveVercelUrl = data.vercelUrl || `https://${data.siteName}.vercel.app`;
+      await persistSyncConfig({
+        vercelSiteName: data.siteName || config.vercelSiteName,
+        vercelToken: cleanToken,
+        vercelUrl: liveVercelUrl,
+        lastVercelDeployedAt: data.deployedAt || new Date().toISOString(),
+        deployCount: (config.deployCount || 0) + 1,
+      });
+
+      updateSettings({
+        ...settings,
+        customDomainUrl: liveVercelUrl,
+      });
+
+      showToast(`Xuất bản lên Vercel thành công! Đường dẫn: ${liveVercelUrl}`, 'success');
+    } catch (err: any) {
+      const errMsg = err?.message || 'Lỗi khi xuất bản tự động lên Vercel.';
+      setVercelError(errMsg);
+      showToast(errMsg, 'error');
+    } finally {
+      setDeployingVercel(false);
+    }
+  };
+
   // Cách 3 (Nâng cao): Đẩy trực tiếp mã nguồn lên GitHub & kích hoạt tự động đồng bộ
   const handlePushToGithub = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -348,7 +421,24 @@ export const ExportAndSyncAppPage: React.FC = () => {
     setTimeout(() => setCopiedLink(false), 2500);
   };
 
+  const handleCopyVercelUrl = (url: string) => {
+    navigator.clipboard.writeText(url);
+    setCopiedVercelLink(true);
+    showToast('Đã sao chép đường link Vercel!', 'success');
+    setTimeout(() => setCopiedVercelLink(false), 2500);
+  };
+
   const previewCleanSubdomain = (config.siteName || 'hoahoc_thcs_ndh')
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, '-')
+    .replace(/[^a-z0-9-]/g, '-');
+
+  const previewCleanVercelSubdomain = (
+    config.vercelSiteName ||
+    config.siteName ||
+    'hoahoc_thcs_ndh'
+  )
     .trim()
     .toLowerCase()
     .replace(/_/g, '-')
@@ -359,6 +449,13 @@ export const ExportAndSyncAppPage: React.FC = () => {
     (settings.customDomainUrl && settings.customDomainUrl.includes('.netlify.app')
       ? settings.customDomainUrl
       : '');
+
+  const rawVercelUrl =
+    config.vercelUrl ||
+    (settings.customDomainUrl && settings.customDomainUrl.includes('.vercel.app')
+      ? settings.customDomainUrl
+      : '');
+  const activeVercelUrl = rawVercelUrl.replace(/-ndh-2026\.vercel\.app/i, '.vercel.app');
 
   if (!isAdmin) {
     return (
@@ -498,10 +595,242 @@ export const ExportAndSyncAppPage: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Live Deployed Link Banner on Vercel if available */}
+        {activeVercelUrl && (
+          <div className="mt-3 p-4 rounded-xl bg-violet-500/25 border-2 border-violet-400 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <CheckCircle2 className="w-6 h-6 text-violet-200 shrink-0" />
+              <div>
+                <div className="text-[11px] font-bold text-violet-200 uppercase tracking-wider">
+                  Đường Link Website Chính Thức Đang Hoạt Động Trên Vercel:
+                </div>
+                <a
+                  href={activeVercelUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm sm:text-base font-black text-white underline hover:text-amber-300 break-all"
+                >
+                  {activeVercelUrl}
+                </a>
+                {config.lastVercelDeployedAt && (
+                  <div className="text-[11px] text-violet-200/90 mt-0.5">
+                    Cập nhật lần cuối: {new Date(config.lastVercelDeployedAt).toLocaleString('vi-VN')}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => handleCopyVercelUrl(activeVercelUrl)}
+                className="px-3 py-2 rounded-lg bg-white text-slate-900 hover:bg-violet-50 font-extrabold text-xs flex items-center gap-1.5 shadow cursor-pointer"
+              >
+                {copiedVercelLink ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Đã chép link</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-slate-700" />
+                    <span>Sao chép link</span>
+                  </>
+                )}
+              </button>
+              <a
+                href={activeVercelUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3.5 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-xs flex items-center gap-1.5 shadow"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Mở Web Vercel Ngay</span>
+              </a>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* =======================================================================
-          3 COLUMNS: CÁCH 1, CÁCH 2, CÁCH 3
+          CÔNG CỤ MỚI: XUẤT BẢN TỰ ĐỘNG 1 CHẠM LÊN VERCEL (.vercel.app) BẰNG MÃ TOKEN
+          (MIỄN PHÍ 100%, TỐC ĐỘ SIÊU NHANH, KHÔNG CẦN GITHUB, THAY THẾ HOÀN HẢO CHO NETLIFY)
+         ======================================================================= */}
+      <div className="bg-white rounded-2xl border-2 border-violet-600 shadow-lg overflow-hidden">
+        <div className="bg-gradient-to-r from-violet-900 via-indigo-900 to-slate-900 text-white p-5">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400 text-slate-950 text-[11px] font-black uppercase">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>CÔNG CỤ MỚI KHUYÊN DÙNG • THAY THẾ NETLIFY (KHÔNG CẦN GITHUB)</span>
+              </div>
+              <h3 className="text-lg sm:text-xl font-black">
+                ⚡ Xuất Bản Tự Động 1 Chạm Lên VERCEL (.vercel.app) Bằng Mã Token
+              </h3>
+              <p className="text-xs text-violet-100 leading-relaxed max-w-3xl">
+                <strong>Vercel.com</strong> là nền tảng lưu trữ web miễn phí số 1 thế giới hiện nay (cạnh tranh trực tiếp với Netlify), băng thông 100GB/tháng miễn phí, không giới hạn lượt học sinh truy cập, máy chủ CDN đặt tại Singapore/Châu Á cực nhanh và <strong>hoàn toàn không cần tài khoản GitHub</strong>. Chỉ cần lấy 1 mã Token trên Vercel dán vào dưới đây và bấm nút Xuất bản!
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+              <a
+                href="https://vercel.com/account/tokens"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 shadow-md"
+              >
+                <KeyRound className="w-4 h-4" />
+                <span>🔑 Lấy mã Token Vercel</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+              <a
+                href="https://dash.cloudflare.com/?to=/:account/pages"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3.5 py-2.5 rounded-xl bg-white/15 hover:bg-white/25 text-white font-bold text-xs border border-white/25 flex items-center justify-center gap-1.5"
+                title="Ngoài Vercel, thầy cũng có thể kéo thả file ZIP ở Cách 1 lên Cloudflare Pages"
+              >
+                <Globe className="w-4 h-4 text-amber-300" />
+                <span>Cloudflare Pages (Kéo-Thả)</span>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={handleOneClickVercelDeploy} className="p-5 sm:p-6 space-y-5 text-xs text-slate-700">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            {/* Bước 1: Tên website Vercel */}
+            <div className="lg:col-span-4 space-y-2 bg-violet-50/60 p-4 rounded-xl border border-violet-200">
+              <label className="font-extrabold text-slate-900 flex items-center gap-2 text-xs sm:text-sm">
+                <span className="w-6 h-6 rounded-full bg-violet-700 text-white text-xs flex items-center justify-center font-black shrink-0">
+                  1
+                </span>
+                <span>Nhập tên website trên Vercel:</span>
+              </label>
+              <input
+                type="text"
+                value={config.vercelSiteName || ''}
+                onChange={(e) => setConfig({ ...config, vercelSiteName: e.target.value })}
+                placeholder="Ví dụ: hoahoc-thcs-ndh"
+                className="w-full p-2.5 rounded-xl border border-violet-300 bg-white font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-600"
+              />
+              <div className="text-[11px] text-slate-600">
+                Đường link nhận được:{' '}
+                <strong className="text-violet-800">
+                  https://{previewCleanVercelSubdomain || 'hoahoc-thcs-ndh'}.vercel.app
+                </strong>
+              </div>
+            </div>
+
+            {/* Bước 2: Mã Token Vercel */}
+            <div className="lg:col-span-5 space-y-2 bg-violet-50/60 p-4 rounded-xl border border-violet-200">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <label className="font-extrabold text-slate-900 flex items-center gap-2 text-xs sm:text-sm">
+                  <span className="w-6 h-6 rounded-full bg-violet-700 text-white text-xs flex items-center justify-center font-black shrink-0">
+                    2
+                  </span>
+                  <span>Dán mã Vercel Access Token:</span>
+                </label>
+                <a
+                  href="https://vercel.com/account/tokens"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 rounded-lg bg-violet-700 hover:bg-violet-600 text-white font-extrabold text-[11px] flex items-center gap-1 shadow-sm"
+                >
+                  <KeyRound className="w-3 h-3" />
+                  <span>Mở trang lấy Token</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+              <input
+                type="password"
+                value={config.vercelToken || ''}
+                onChange={(e) => setConfig({ ...config, vercelToken: e.target.value })}
+                placeholder="Dán mã Token vừa tạo từ vercel.com/account/tokens vào đây..."
+                className="w-full p-2.5 rounded-xl border border-violet-300 bg-white font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-600"
+              />
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                <strong>Hướng dẫn 10 giây:</strong> Bấm <strong>"Lấy mã Token Vercel"</strong> (đăng nhập bằng tài khoản Google) → Bấm <strong>Create</strong> → Đặt tên bất kỳ (vd: <code>app</code>), chọn Scope: <strong>Full Account</strong>, Expiration: <strong>No Expiration</strong> → Bấm <strong>Create Token</strong> rồi copy mã dán vào ô trên.
+              </p>
+            </div>
+
+            {/* Bước 3: Nút Xuất Bản 1 Chạm */}
+            <div className="lg:col-span-3 flex flex-col justify-between gap-3 bg-gradient-to-br from-violet-50 to-indigo-50 p-4 rounded-xl border border-violet-200 h-full">
+              <div className="font-extrabold text-slate-900 flex items-center gap-2 text-xs sm:text-sm">
+                <span className="w-6 h-6 rounded-full bg-violet-700 text-white text-xs flex items-center justify-center font-black shrink-0">
+                  3
+                </span>
+                <span>Đẩy thẳng lên Vercel:</span>
+              </div>
+              <button
+                type="submit"
+                disabled={deployingVercel}
+                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-violet-700 to-indigo-700 hover:from-violet-600 hover:to-indigo-600 disabled:opacity-60 text-white font-black text-xs sm:text-sm shadow-md hover:shadow-lg transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {deployingVercel ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+                    <span>Đang đẩy lên Vercel...</span>
+                  </>
+                ) : (
+                  <>
+                    <Rocket className="w-4 h-4 shrink-0" />
+                    <span>🚀 Xuất bản lên Vercel ngay</span>
+                  </>
+                )}
+              </button>
+              <div className="text-[11px] text-violet-900 font-semibold leading-snug">
+                ✔ Tự động mở khóa công khai & tự động cập nhật khi sửa app trên AI Studio!
+              </div>
+            </div>
+          </div>
+
+          {vercelError && (
+            <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold">
+              ⚠️ {vercelError}
+            </div>
+          )}
+
+          {activeVercelUrl && (
+            <div className="p-4 rounded-xl bg-violet-50 border-2 border-violet-400 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <div className="text-[11px] font-extrabold text-violet-800 uppercase">
+                  🎉 Đường link Vercel hoạt động 100% (Gửi cho học sinh vào học ngay):
+                </div>
+                <a
+                  href={activeVercelUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm sm:text-base font-black text-violet-700 underline break-all"
+                >
+                  {activeVercelUrl}
+                </a>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleCopyVercelUrl(activeVercelUrl)}
+                  className="px-3 py-2 rounded-lg bg-white border border-violet-300 hover:bg-violet-100 text-violet-900 font-extrabold text-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>Copy Link Vercel</span>
+                </button>
+                <a
+                  href={activeVercelUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3.5 py-2 rounded-lg bg-violet-700 hover:bg-violet-600 text-white font-extrabold text-xs flex items-center gap-1.5"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Mở Trang Vercel</span>
+                </a>
+              </div>
+            </div>
+          )}
+        </form>
+      </div>
+
+      {/* =======================================================================
+          3 COLUMNS: CÁCH 1, CÁCH 2, CÁCH 3 (NETLIFY & GITHUB)
          ======================================================================= */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
         {/* ===================================================================

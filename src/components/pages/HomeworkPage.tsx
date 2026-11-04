@@ -28,9 +28,10 @@ import {
   getStoredHomeworkSubmissions,
   saveHomeworkSubmission,
   gradeHomeworkSubmission,
+  recordMediaDownload,
 } from '../../utils/examStorage';
-import { getActiveStudentRoster } from '../../utils/studentRoster';
-import { AttachmentList, InteractiveCommentSection } from '../AttachmentAndCommentSection';
+import { getActiveStudentRoster, normalizeVietnameseText } from '../../utils/studentRoster';
+import { AttachmentList, InteractiveCommentSection, ItemActivityLogBar } from '../AttachmentAndCommentSection';
 import { doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 
@@ -412,14 +413,36 @@ export const HomeworkPage: React.FC = () => {
       return;
     }
 
+    let verifiedName = studentSubForm.studentName.trim();
+    let verifiedCode = studentSubForm.studentCode.trim() || 'NDH-HS';
+    let verifiedClass = studentSubForm.classGroup;
+
+    if (!isAdmin) {
+      const roster = getActiveStudentRoster();
+      const normInput = normalizeVietnameseText(verifiedName);
+      const matched = roster.find(
+        (s) => normalizeVietnameseText(s.fullName) === normInput
+      );
+      if (!matched) {
+        showToast(
+          'Họ và tên học sinh không nằm trong danh sách lớp chính thức. Vui lòng đăng nhập tài khoản học sinh để nộp bài.',
+          'error'
+        );
+        return;
+      }
+      verifiedName = matched.fullName;
+      verifiedCode = matched.studentCode || verifiedCode;
+      verifiedClass = matched.enrolledClass || verifiedClass;
+    }
+
     const newSub: HomeworkSubmission = {
       id: 'hwsub-' + Date.now(),
       homeworkId: submittingHw.id || 'hw',
       homeworkTitle: submittingHw.title,
       studentId: currentUser?.uid || 'student',
-      studentCode: studentSubForm.studentCode.trim() || 'NDH-HS',
-      studentName: studentSubForm.studentName.trim(),
-      classGroup: studentSubForm.classGroup,
+      studentCode: verifiedCode,
+      studentName: verifiedName,
+      classGroup: verifiedClass,
       contentNote: studentSubForm.contentNote.trim(),
       attachments: studentAttachments,
       submittedAt: new Date().toLocaleString('vi-VN'),
@@ -431,7 +454,7 @@ export const HomeworkPage: React.FC = () => {
     setSubmissions(next);
     setSubmittingHw(null);
     showToast(
-      `Đã gửi bài tập "${submittingHw.title}" thành công! Thầy Hành sẽ chấm và phản hồi điểm số.`,
+      `Đã gửi bài tập "${submittingHw.title}" thành công! Đã ghi nhận tên HS ${verifiedName} (${verifiedClass}).`,
       'success'
     );
   };
@@ -551,6 +574,12 @@ export const HomeworkPage: React.FC = () => {
   // Download sample homework file when student clicks "Tải đề" on default items
   const handleDownloadDefaultHomeworkDoc = (hw: HomeworkItem) => {
     if (hw.attachments && hw.attachments.length > 0) return;
+    recordMediaDownload(
+      `hw-${hw.id || 'hw'}`,
+      userProfile?.fullName || '',
+      userProfile?.enrolledClass,
+      isAdmin
+    );
     const content = `PHIẾU BÀI TẬP HÓA HỌC THCS - THẦY NGUYỄN ĐÌNH HÀNH\n==================================================\nTiêu đề: ${hw.title}\nLớp áp dụng: ${hw.classGroup}\nNgày giao: ${hw.assignedDate} | Hạn nộp: ${hw.dueDate}\n\nNội dung & Yêu cầu:\n${hw.description}\n\nHướng dẫn nộp bài:\nHọc sinh làm bài ra vở (chụp ảnh rõ nét) hoặc trình bày trên file Word (.docx) rồi bấm nút "Gửi bài tập (Word / Ảnh)" trên hệ thống để Thầy chấm điểm.`;
     const blob = new Blob([content], { type: 'application/msword;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -911,6 +940,7 @@ export const HomeworkPage: React.FC = () => {
                         <AttachmentList
                           attachments={effectiveAtts}
                           showInlinePreview={true}
+                          parentTargetId={`hw-${hwId}`}
                           onRemove={
                             canManageHw
                               ? (attId) => handleRemoveHomeworkAttachment(hwId, attId)
@@ -925,6 +955,13 @@ export const HomeworkPage: React.FC = () => {
                     </div>
                   );
                 })()}
+
+                {/* Automatic Roster-Verified Student Interaction Log Bar (Xem, Viết/Nộp bài, Tải) */}
+                <ItemActivityLogBar
+                  targetId={`hw-${hwId}`}
+                  label="Học sinh tương tác bài tập này (Tự động: Đã xem, Đã viết/nộp bài, Đã tải)"
+                  compact
+                />
               </div>
 
               {/* Show Student's Own Submitted Work & Teacher's Grade if submitted */}

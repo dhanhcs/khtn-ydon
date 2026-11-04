@@ -1,0 +1,76 @@
+<svg viewBox="0 0 240 240" width="256" height="256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="ndhGoldRim" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FEF08A" />
+      <stop offset="35%" stop-color="#FACC15" />
+      <stop offset="70%" stop-color="#D97706" />
+      <stop offset="100%" stop-color="#FDE047" />
+    </linearGradient>
+    <linearGradient id="ndhOuterBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F296B" />
+      <stop offset="50%" stop-color="#1E3A8A" />
+      <stop offset="100%" stop-color="#091945" />
+    </linearGradient>
+    <radialGradient id="ndhInnerBg" cx="50%" cy="46%" r="52%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="70%" stop-color="#F0F9FF" />
+      <stop offset="100%" stop-color="#DBEAFE" />
+    </radialGradient>
+    <linearGradient id="ndhCyanLiquid" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#06B6D4" />
+      <stop offset="55%" stop-color="#0284C7" />
+      <stop offset="100%" stop-color="#10B981" />
+    </linearGradient>
+    <path id="ndhTopTextArc" d="M 34,120 A 86,86 0 1,1 206,120" />
+  </defs>
+
+  <circle cx="120" cy="120" r="116" fill="url(#ndhGoldRim)" stroke="#FFFFFF" stroke-width="3" />
+  <circle cx="120" cy="120" r="108" fill="url(#ndhOuterBlue)" stroke="url(#ndhGoldRim)" stroke-width="2.5" />
+  <circle cx="120" cy="120" r="80" fill="url(#ndhInnerBg)" stroke="url(#ndhGoldRim)" stroke-width="3" />
+  <circle cx="120" cy="120" r="94" stroke="#FDE047" stroke-width="1.2" stroke-dasharray="4 4" opacity="0.55" />
+
+  <text fill="#FEF08A" font-size="18.5" font-weight="900" letter-spacing="2.2" font-family="system-ui, -apple-system, sans-serif">
+    <textPath href="#ndhTopTextArc" startOffset="50%" text-anchor="middle">
+      ★ HÓA HỌC NĐH ★
+    </textPath>
+  </text>
+
+  <polygon points="120,48 138,58 138,78 120,88 102,78 102,58" stroke="#0284C7" stroke-width="2.2" fill="rgba(56, 189, 248, 0.1)" opacity="0.85" />
+  <circle cx="120" cy="68" r="10" stroke="#0284C7" stroke-width="1.6" stroke-dasharray="3 2" fill="none" />
+
+  <ellipse cx="120" cy="112" rx="64" ry="23" stroke="#1D4ED8" stroke-width="2.4" transform="rotate(-28 120 112)" opacity="0.8" />
+  <ellipse cx="120" cy="112" rx="64" ry="23" stroke="#059669" stroke-width="2.4" transform="rotate(28 120 112)" opacity="0.8" />
+
+  <circle cx="67" cy="87" r="4.5" fill="#EF4444" stroke="#FFFFFF" stroke-width="1.5" />
+  <circle cx="173" cy="87" r="4.5" fill="#10B981" stroke="#FFFFFF" stroke-width="1.5" />
+  <circle cx="68" cy="137" r="4.5" fill="#3B82F6" stroke="#FFFFFF" stroke-width="1.5" />
+  <circle cx="172" cy="137" r="4.5" fill="#F59E0B" stroke="#FFFFFF" stroke-width="1.5" />
+
+  <path d="M111 66 H129 M114 66 V86 L88 134 C85 140 89 147 96 147 H144 C151 147 155 140 152 134 L126 86 V66" fill="#FFFFFF" stroke="#0F172A" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M97 118 Q109 113 120 118 Q131 123 143 118 L149 133 C151 138 148 143 142 143 H98 C92 143 89 138 91 133 Z" fill="url(#ndhCyanLiquid)" />
+  <line x1="126" y1="105" x2="133" y2="105" stroke="#0284C7" stroke-width="2" stroke-linecap="round" />
+  <line x1="131" y1="115" x2="139" y2="115" stroke="#0284C7" stroke-width="2" stroke-linecap="round" />
+  <circle cx="110" cy="132" r="4" fill="#FFFFFF" opacity="0.9" />
+  <circle cx="126" cy="127" r="3" fill="#FFFFFF" opacity="0.9" />
+  <circle cx="118" cy="110" r="3.2" fill="#06B6D4" />
+  <circle cx="124" cy="98" r="2.2" fill="#10B981" />
+
+  <path d="M78 154 Q99 146 120 156 Q141 146 162 154 L158 168 Q139 160 120 170 Q101 160 82 168 Z" fill="#FEF08A" stroke="#1E3A8A" stroke-width="2.5" stroke-linejoin="round" />
+  <line x1="120" y1="156" x2="120" y2="170" stroke="#1E3A8A" stroke-width="2.5" />
+
+  <g transform="translate(68, 174)">
+    <rect x="0" y="0" width="104" height="34" rx="10" fill="#0F172A" stroke="url(#ndhGoldRim)" stroke-width="3" />
+    <g transform="translate(10, 5) skewX(-10)">
+      <rect width="26" height="24" rx="4" fill="#DC2626" />
+      <text x="13" y="18" text-anchor="middle" fill="#FFFFFF" font-size="17" font-weight="900" font-family="system-ui, sans-serif" transform="skewX(10)">N</text>
+    </g>
+    <g transform="translate(40, 5) skewX(-10)">
+      <rect width="26" height="24" rx="4" fill="#10B981" />
+      <text x="13" y="18" text-anchor="middle" fill="#FFFFFF" font-size="17" font-weight="900" font-family="system-ui, sans-serif" transform="skewX(10)">Đ</text>
+    </g>
+    <g transform="translate(70, 5) skewX(-10)">
+      <rect width="26" height="24" rx="4" fill="#2563EB" />
+      <text x="13" y="18" text-anchor="middle" fill="#FFFFFF" font-size="17" font-weight="900" font-family="system-ui, sans-serif" transform="skewX(10)">H</text>
+    </g>
+  </g>
+</svg>
