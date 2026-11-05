@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { Calendar, Clock, Download, FileSpreadsheet, Eye, PlusCircle, X, Sparkles } from 'lucide-react';
 import { ScheduleItem } from '../../types';
+import { readPersistedKey, writePersistedKey } from '../../utils/cloudPersistence';
 
 export const SAMPLE_SCHEDULES: ScheduleItem[] = [
   {
@@ -30,7 +31,10 @@ export const SAMPLE_SCHEDULES: ScheduleItem[] = [
 export const SchedulePage: React.FC = () => {
   const { classes, showToast } = useApp();
   const { isAdmin } = useAuth();
-  const [schedules, setSchedules] = useState<ScheduleItem[]>(SAMPLE_SCHEDULES);
+  const [schedules, setSchedules] = useState<ScheduleItem[]>(() => {
+    const saved = readPersistedKey<ScheduleItem[]>('ndh_schedules', SAMPLE_SCHEDULES);
+    return Array.isArray(saved) && saved.length > 0 ? saved : SAMPLE_SCHEDULES;
+  });
   const [filterClass, setFilterClass] = useState('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [modalForm, setModalForm] = useState({
@@ -40,6 +44,17 @@ export const SchedulePage: React.FC = () => {
     fileUrl: '',
     notes: '',
   });
+
+  useEffect(() => {
+    const refresh = () => {
+      const latest = readPersistedKey<ScheduleItem[]>('ndh_schedules', SAMPLE_SCHEDULES);
+      if (Array.isArray(latest) && latest.length > 0) {
+        setSchedules(latest);
+      }
+    };
+    window.addEventListener('ndh-schedules-updated', refresh);
+    return () => window.removeEventListener('ndh-schedules-updated', refresh);
+  }, []);
 
   const handleAddSchedule = (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,7 +74,9 @@ export const SchedulePage: React.FC = () => {
       updatedAt: new Date().toLocaleDateString('vi-VN'),
     };
 
-    setSchedules([newItem, ...schedules]);
+    const next = [newItem, ...schedules];
+    setSchedules(next);
+    writePersistedKey('ndh_schedules', next, { eventName: 'ndh-schedules-updated' });
     setShowAddModal(false);
     showToast('Đã đăng thời khóa biểu mới thành công!', 'success');
   };

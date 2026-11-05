@@ -5,6 +5,7 @@ import { UserPlus, CheckCircle2, Award, Sparkles, Send, Phone, Mail, GraduationC
 import { RegistrationItem } from '../../types';
 import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
+import { readPersistedKey, writePersistedKey } from '../../utils/cloudPersistence';
 
 export const RegistrationPage: React.FC = () => {
   const { classes, showToast } = useApp();
@@ -33,6 +34,7 @@ export const RegistrationPage: React.FC = () => {
     setLoading(true);
     try {
       const newRegistration: RegistrationItem = {
+        id: 'reg-' + Date.now(),
         fullName: form.fullName.trim(),
         phone: form.phone.trim(),
         email: form.email.trim(),
@@ -44,13 +46,17 @@ export const RegistrationPage: React.FC = () => {
         createdAt: new Date().toISOString(),
       };
 
-      const existing = JSON.parse(localStorage.getItem('ndh_registrations') || '[]');
-      localStorage.setItem('ndh_registrations', JSON.stringify([newRegistration, ...existing]));
+      const existing = readPersistedKey<RegistrationItem[]>('ndh_registrations', []);
+      writePersistedKey(
+        'ndh_registrations',
+        [newRegistration, ...(Array.isArray(existing) ? existing : [])],
+        { eventName: 'ndh-registrations-updated' }
+      );
 
       try {
         await addDoc(collection(db, 'registrations'), newRegistration);
       } catch {
-        // already saved in localStorage
+        // already saved in IndexedDB & Cloud Store
       }
 
       // Also synchronize into student login accounts so this student can log in immediately

@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { CalendarOff, PlusCircle, CheckCircle, XCircle, Clock, AlertCircle, Phone, X, Send } from 'lucide-react';
 import { LeaveRequestItem } from '../../types';
 import { getActiveStudentRoster, verifyStudentInRoster } from '../../utils/studentRoster';
+import { readPersistedKey, writePersistedKey } from '../../utils/cloudPersistence';
 
 export const SAMPLE_LEAVE_REQUESTS: LeaveRequestItem[] = [];
 
@@ -12,17 +13,19 @@ export const LeaveRequestsPage: React.FC = () => {
   const { isAdmin, userProfile } = useAuth();
 
   const [requests, setRequests] = useState<LeaveRequestItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('ndh_leave_requests');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed.filter((r: any) => r && r.id !== 'lr-1' && r.id !== 'lr-2');
-        }
-      }
-    } catch {}
+    const parsed = readPersistedKey<LeaveRequestItem[]>('ndh_leave_requests', []);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((r: any) => r && r.id !== 'lr-1' && r.id !== 'lr-2');
+    }
     return [];
   });
+
+  const persistRequests = (nextList: LeaveRequestItem[]) => {
+    setRequests(nextList);
+    writePersistedKey('ndh_leave_requests', nextList, {
+      eventName: 'ndh-leave-requests-updated',
+    });
+  };
 
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({
@@ -35,8 +38,15 @@ export const LeaveRequestsPage: React.FC = () => {
   });
 
   useEffect(() => {
-    localStorage.setItem('ndh_leave_requests', JSON.stringify(requests));
-  }, [requests]);
+    const refresh = () => {
+      const latest = readPersistedKey<LeaveRequestItem[]>('ndh_leave_requests', []);
+      if (Array.isArray(latest)) {
+        setRequests(latest.filter((r: any) => r && r.id !== 'lr-1' && r.id !== 'lr-2'));
+      }
+    };
+    window.addEventListener('ndh-leave-requests-updated', refresh);
+    return () => window.removeEventListener('ndh-leave-requests-updated', refresh);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,13 +83,13 @@ export const LeaveRequestsPage: React.FC = () => {
       createdAt: new Date().toLocaleString('vi-VN'),
     };
 
-    setRequests([newItem, ...requests]);
+    persistRequests([newItem, ...requests]);
     setShowModal(false);
     showToast('Đã gửi đơn xin phép nghỉ học đến Thầy Nguyễn Đình Hành!', 'success');
   };
 
   const handleUpdateStatus = (id: string, status: 'approved' | 'rejected', note?: string) => {
-    setRequests(
+    persistRequests(
       requests.map((r) =>
         r.id === id
           ? {
