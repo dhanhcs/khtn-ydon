@@ -20,13 +20,21 @@ import {
   OnlineMeetingLink,
 } from '../types';
 import mammoth from 'mammoth';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase/config';
 import {
   getActiveStudentRoster,
   verifyStudentInRoster,
   normalizeVietnamese,
 } from './studentRoster';
+import {
+  readPersistedKey,
+  writePersistedKey,
+  cacheAttachmentInMemoryAndIDB,
+  resolveAttachmentDataUrl,
+  markItemDeleted,
+  hasViewedInCurrentSession,
+  initCloudPersistence,
+  pushAttachmentToCloud,
+} from './cloudPersistence';
 
 export const DEFAULT_EXAM_BANK: QuizItem[] = [
   {
@@ -273,37 +281,18 @@ const STORAGE_KEY = 'ndh_exam_bank';
  * Retrieve exams from localStorage, initialized with DEFAULT_EXAM_BANK
  */
 export function getStoredExams(): QuizItem[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
-      }
-    }
-  } catch (e) {
-    console.warn('Error reading stored exams:', e);
+  const parsed = readPersistedKey<QuizItem[]>(STORAGE_KEY, DEFAULT_EXAM_BANK);
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    return parsed;
   }
   return DEFAULT_EXAM_BANK;
 }
 
 /**
- * Save all exams into localStorage AND Cloud Firestore for cross-device sync
+ * Save all exams into IndexedDB, localStorage AND Universal Cloud Store for cross-device sync
  */
 export function saveAllExams(exams: QuizItem[]): void {
-  const now = Date.now();
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(exams));
-    localStorage.setItem(STORAGE_KEY + '_updated_at', String(now));
-    window.dispatchEvent(new CustomEvent('ndh-exams-updated'));
-  } catch (e) {
-    console.warn('Error saving exams:', e);
-  }
-  setDoc(
-    doc(db, 'app_settings', 'exam_bank'),
-    { items: exams, updatedAt: now },
-    { merge: false }
-  ).catch(() => {});
+  writePersistedKey(STORAGE_KEY, exams, { eventName: 'ndh-exams-updated' });
 }
 
 /**
@@ -334,6 +323,7 @@ export function saveExamItem(quiz: QuizItem): QuizItem[] {
  * Delete an exam by ID
  */
 export function deleteExamItem(quizId: string): QuizItem[] {
+  markItemDeleted(quizId);
   const current = getStoredExams();
   const updated = current.filter((q) => q.id !== quizId);
   saveAllExams(updated);
@@ -807,7 +797,7 @@ export async function processUploadedFile(file: File): Promise<FileAttachment> {
       reader.readAsDataURL(file);
     });
 
-    return {
+    const imgAtt: FileAttachment = {
       id: 'att-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
       name: file.name,
       type: 'image',
@@ -815,6 +805,9 @@ export async function processUploadedFile(file: File): Promise<FileAttachment> {
       dataUrl,
       sizeLabel: formatFileSize(file.size),
     };
+    cacheAttachmentInMemoryAndIDB(imgAtt);
+    pushAttachmentToCloud(imgAtt).catch(() => {});
+    return imgAtt;
   }
 
   // For Word / PDF / Excel / Other files, read as DataURL (up to 8MB) so it can be viewed & downloaded directly
@@ -834,7 +827,7 @@ export async function processUploadedFile(file: File): Promise<FileAttachment> {
     reader.readAsDataURL(file);
   });
 
-  return {
+  const docAtt: FileAttachment = {
     id: 'att-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
     name: file.name,
     type: fileType,
@@ -844,25 +837,32 @@ export async function processUploadedFile(file: File): Promise<FileAttachment> {
     extractedText: extractedText ? extractedText.slice(0, 30000) : undefined,
     extractedHtml: extractedHtml ? extractedHtml.slice(0, 50000) : undefined,
   };
+  cacheAttachmentInMemoryAndIDB(docAtt);
+  pushAttachmentToCloud(docAtt).catch(() => {});
+  return docAtt;
 }
 
 /**
  * Trigger browser download for a FileAttachment and record the downloader's name
  */
 export function downloadAttachmentFile(att: FileAttachment, parentTargetId?: string): void {
-  if (!att.dataUrl) return;
+  if (!att) return;
   try {
     recordMediaDownload(`att-${att.id}`);
     if (parentTargetId) {
       recordMediaDownload(parentTargetId);
     }
   } catch {}
-  const a = document.createElement('a');
-  a.href = att.dataUrl;
-  a.download = att.name || 'Tai_Lieu_Dinh_Kem';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  resolveAttachmentDataUrl(att).then((resolvedUrl) => {
+    const href = resolvedUrl || att.dataUrl;
+    if (!href || href.startsWith('__idb_att__:')) return;
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = att.name || 'Tai_Lieu_Dinh_Kem';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
 }
 
 /**
@@ -896,38 +896,19 @@ export function recalculateRanks(records: ExamResultRecord[]): ExamResultRecord[
 }
 
 export function getStoredExamResults(): ExamResultRecord[] {
-  try {
-    const raw = localStorage.getItem(EXAM_RESULTS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        const cleaned = parsed.filter(
-          (r: any) => r && r.id && !LEGACY_FAKE_RESULT_IDS.has(String(r.id))
-        );
-        return recalculateRanks(cleaned);
-      }
-    }
-  } catch (e) {
-    console.warn('Error reading exam results:', e);
+  const parsed = readPersistedKey<ExamResultRecord[]>(EXAM_RESULTS_KEY, []);
+  if (Array.isArray(parsed)) {
+    const cleaned = parsed.filter(
+      (r: any) => r && r.id && !LEGACY_FAKE_RESULT_IDS.has(String(r.id))
+    );
+    return recalculateRanks(cleaned);
   }
   return [];
 }
 
 export function saveExamResults(results: ExamResultRecord[]): ExamResultRecord[] {
   const ranked = recalculateRanks(results);
-  const now = Date.now();
-  try {
-    localStorage.setItem(EXAM_RESULTS_KEY, JSON.stringify(ranked));
-    localStorage.setItem(EXAM_RESULTS_KEY + '_updated_at', String(now));
-    window.dispatchEvent(new CustomEvent('ndh-results-updated'));
-  } catch (e) {
-    console.warn('Error saving exam results:', e);
-  }
-  setDoc(
-    doc(db, 'app_settings', 'exam_results'),
-    { items: ranked, updatedAt: now },
-    { merge: false }
-  ).catch(() => {});
+  writePersistedKey(EXAM_RESULTS_KEY, ranked, { eventName: 'ndh-results-updated' });
   return ranked;
 }
 
@@ -986,16 +967,8 @@ export function upsertExamResultRecord(record: Partial<ExamResultRecord> & { stu
 const QUIZ_SUBMISSIONS_KEY = 'ndh_quiz_submissions';
 
 export function getStoredQuizSubmissions(): QuizSubmission[] {
-  try {
-    const raw = localStorage.getItem(QUIZ_SUBMISSIONS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch (e) {
-    console.warn('Error reading quiz submissions:', e);
-  }
-  return [];
+  const parsed = readPersistedKey<QuizSubmission[]>(QUIZ_SUBMISSIONS_KEY, []);
+  return Array.isArray(parsed) ? parsed : [];
 }
 
 export function saveQuizSubmission(submission: QuizSubmission): QuizSubmission[] {
@@ -1006,19 +979,9 @@ export function saveQuizSubmission(submission: QuizSubmission): QuizSubmission[]
     status: submission.status || 'submitted',
   };
   const next = [item, ...current.filter((s) => s.id !== item.id)];
-  const now = Date.now();
-  try {
-    localStorage.setItem(QUIZ_SUBMISSIONS_KEY, JSON.stringify(next));
-    localStorage.setItem(QUIZ_SUBMISSIONS_KEY + '_updated_at', String(now));
-    window.dispatchEvent(new CustomEvent('ndh-quiz-submissions-updated'));
-  } catch (e) {
-    console.warn('Error saving quiz submission:', e);
-  }
-  setDoc(
-    doc(db, 'app_settings', 'quiz_submissions'),
-    { items: next, updatedAt: now },
-    { merge: false }
-  ).catch(() => {});
+  writePersistedKey(QUIZ_SUBMISSIONS_KEY, next, {
+    eventName: 'ndh-quiz-submissions-updated',
+  });
 
   // Also sync to Exam Results table immediately
   upsertExamResultRecord({
@@ -1069,19 +1032,9 @@ export function updateAndGradeQuizSubmission(
     return sub;
   });
 
-  const now = Date.now();
-  try {
-    localStorage.setItem(QUIZ_SUBMISSIONS_KEY, JSON.stringify(updated));
-    localStorage.setItem(QUIZ_SUBMISSIONS_KEY + '_updated_at', String(now));
-    window.dispatchEvent(new CustomEvent('ndh-quiz-submissions-updated'));
-  } catch (e) {
-    console.warn('Error updating quiz submission:', e);
-  }
-  setDoc(
-    doc(db, 'app_settings', 'quiz_submissions'),
-    { items: updated, updatedAt: now },
-    { merge: false }
-  ).catch(() => {});
+  writePersistedKey(QUIZ_SUBMISSIONS_KEY, updated, {
+    eventName: 'ndh-quiz-submissions-updated',
+  });
 
   if (targetSub) {
     upsertExamResultRecord({
@@ -1105,34 +1058,16 @@ export function updateAndGradeQuizSubmission(
 const HOMEWORK_SUBMISSIONS_KEY = 'ndh_homework_submissions';
 
 export function getStoredHomeworkSubmissions(): HomeworkSubmission[] {
-  try {
-    const raw = localStorage.getItem(HOMEWORK_SUBMISSIONS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch (e) {
-    console.warn('Error reading homework submissions:', e);
-  }
-  return [];
+  const parsed = readPersistedKey<HomeworkSubmission[]>(HOMEWORK_SUBMISSIONS_KEY, []);
+  return Array.isArray(parsed) ? parsed : [];
 }
 
 export function saveHomeworkSubmission(sub: HomeworkSubmission): HomeworkSubmission[] {
   const current = getStoredHomeworkSubmissions();
   const next = [sub, ...current.filter((item) => item.id !== sub.id)];
-  const now = Date.now();
-  try {
-    localStorage.setItem(HOMEWORK_SUBMISSIONS_KEY, JSON.stringify(next));
-    localStorage.setItem(HOMEWORK_SUBMISSIONS_KEY + '_updated_at', String(now));
-    window.dispatchEvent(new CustomEvent('ndh-hw-submissions-updated'));
-  } catch (e) {
-    console.warn('Error saving homework submission:', e);
-  }
-  setDoc(
-    doc(db, 'app_settings', 'homework_submissions'),
-    { items: next, updatedAt: now },
-    { merge: false }
-  ).catch(() => {});
+  writePersistedKey(HOMEWORK_SUBMISSIONS_KEY, next, {
+    eventName: 'ndh-hw-submissions-updated',
+  });
 
   // Automatically record student homework submission interaction
   try {
@@ -1173,19 +1108,9 @@ export function gradeHomeworkSubmission(
     return item;
   });
 
-  const now = Date.now();
-  try {
-    localStorage.setItem(HOMEWORK_SUBMISSIONS_KEY, JSON.stringify(next));
-    localStorage.setItem(HOMEWORK_SUBMISSIONS_KEY + '_updated_at', String(now));
-    window.dispatchEvent(new CustomEvent('ndh-hw-submissions-updated'));
-  } catch (e) {
-    console.warn('Error grading homework submission:', e);
-  }
-  setDoc(
-    doc(db, 'app_settings', 'homework_submissions'),
-    { items: next, updatedAt: now },
-    { merge: false }
-  ).catch(() => {});
+  writePersistedKey(HOMEWORK_SUBMISSIONS_KEY, next, {
+    eventName: 'ndh-hw-submissions-updated',
+  });
 
   if (gradedItem) {
     upsertExamResultRecord({
@@ -1209,19 +1134,16 @@ export function gradeHomeworkSubmission(
 const ITEM_COMMENTS_KEY = 'ndh_item_comments';
 
 export function getAllItemComments(): Record<string, AnnouncementComment[]> {
-  try {
-    const raw = localStorage.getItem(ITEM_COMMENTS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) || {};
-      // Filter out any legacy sample comment ID 'c-1'
-      for (const k of Object.keys(parsed)) {
-        if (Array.isArray(parsed[k])) {
-          parsed[k] = parsed[k].filter((c: any) => c && c.id !== 'c-1');
-        }
+  const parsed = readPersistedKey<Record<string, AnnouncementComment[]>>(ITEM_COMMENTS_KEY, {});
+  if (parsed && typeof parsed === 'object') {
+    const out: Record<string, AnnouncementComment[]> = {};
+    for (const k of Object.keys(parsed)) {
+      if (Array.isArray(parsed[k])) {
+        out[k] = parsed[k].filter((c: any) => c && c.id !== 'c-1');
       }
-      return parsed;
     }
-  } catch {}
+    return out;
+  }
   return {};
 }
 
@@ -1288,19 +1210,7 @@ export function addCommentForTarget(
   };
   const nextList = [...(all[targetId] || []), newComment];
   all[targetId] = nextList;
-  const now = Date.now();
-  try {
-    localStorage.setItem(ITEM_COMMENTS_KEY, JSON.stringify(all));
-    localStorage.setItem(ITEM_COMMENTS_KEY + '_updated_at', String(now));
-    window.dispatchEvent(new CustomEvent('ndh-comments-updated'));
-  } catch (e) {
-    console.warn('Error saving comment:', e);
-  }
-  setDoc(
-    doc(db, 'app_settings', 'item_comments'),
-    { commentsMap: all, updatedAt: now },
-    { merge: false }
-  ).catch(() => {});
+  writePersistedKey(ITEM_COMMENTS_KEY, all, { eventName: 'ndh-comments-updated' });
 
   // Automatically record write interaction in activity log
   try {
@@ -1326,22 +1236,11 @@ export function deleteCommentForTarget(
   targetId: string,
   commentId: string
 ): AnnouncementComment[] {
+  markItemDeleted(commentId);
   const all = getAllItemComments();
   const nextList = (all[targetId] || []).filter((c) => c.id !== commentId);
   all[targetId] = nextList;
-  const now = Date.now();
-  try {
-    localStorage.setItem(ITEM_COMMENTS_KEY, JSON.stringify(all));
-    localStorage.setItem(ITEM_COMMENTS_KEY + '_updated_at', String(now));
-    window.dispatchEvent(new CustomEvent('ndh-comments-updated'));
-  } catch (e) {
-    console.warn('Error deleting comment:', e);
-  }
-  setDoc(
-    doc(db, 'app_settings', 'item_comments'),
-    { commentsMap: all, updatedAt: now },
-    { merge: false }
-  ).catch(() => {});
+  writePersistedKey(ITEM_COMMENTS_KEY, all, { eventName: 'ndh-comments-updated' });
   return filterCommentsByRoster(nextList);
 }
 
@@ -1377,10 +1276,15 @@ export function resolveVerifiedActor(customActor?: {
 } {
   try {
     // 1. Check if Admin/Teacher
+    const activeAuthMode = localStorage.getItem('ndh_active_auth_mode');
+    const savedAdminSession =
+      localStorage.getItem('ndh_admin_session') ||
+      sessionStorage.getItem('ndh_admin_session');
     const adminRole = localStorage.getItem('ndh_admin_master_role');
     if (
       customActor?.userRole === 'admin' ||
       adminRole === 'admin' ||
+      (activeAuthMode === 'admin_session' && savedAdminSession && !customActor?.userName) ||
       (customActor?.userName &&
         (customActor.userName.toLowerCase().includes('nguyễn đình hành') ||
           customActor.userName.toLowerCase().includes('qtv')))
@@ -1401,17 +1305,30 @@ export function resolveVerifiedActor(customActor?: {
       };
     }
 
-    // 2. Get candidate student name & class from customActor or active logged-in student profile
+    // 2. Get candidate student name & class from customActor or active logged-in student session (`ndh_user_session`)
     let candidateName = (customActor?.userName || '').replace(/\(.*?\)/g, '').trim();
     let candidateClass = (customActor?.userClass || '').trim();
 
     if (!candidateName || GENERIC_GUEST_NAMES.has(normalizeVietnamese(candidateName))) {
-      const rawStudent = localStorage.getItem('ndh_active_student_profile_v1');
-      if (rawStudent) {
-        const parsed = JSON.parse(rawStudent);
+      const rawSession =
+        localStorage.getItem('ndh_user_session') ||
+        sessionStorage.getItem('ndh_user_session') ||
+        localStorage.getItem('ndh_active_student_profile_v1');
+      if (rawSession) {
+        const parsed = JSON.parse(rawSession);
         if (parsed && parsed.fullName) {
+          if (parsed.role === 'admin') {
+            return {
+              userName: 'Thầy Nguyễn Đình Hành (QTV)',
+              userClass: 'Quản trị',
+              userRole: 'admin',
+              isValid: true,
+            };
+          }
           candidateName = String(parsed.fullName).replace(/\(.*?\)/g, '').trim();
-          candidateClass = parsed.enrolledClass ? String(parsed.enrolledClass).trim() : candidateClass;
+          candidateClass = parsed.enrolledClass
+            ? String(parsed.enrolledClass).trim()
+            : candidateClass;
         }
       }
     }
@@ -1542,13 +1459,8 @@ function filterVerifiedEntries(entries: MediaActivityEntry[] = []): MediaActivit
 }
 
 export function getAllMediaActivityLogs(): Record<string, MediaActivityLog> {
-  try {
-    const raw = localStorage.getItem(MEDIA_ACTIVITY_KEY);
-    if (raw) {
-      return JSON.parse(raw) || {};
-    }
-  } catch {}
-  return {};
+  const parsed = readPersistedKey<Record<string, MediaActivityLog>>(MEDIA_ACTIVITY_KEY, {});
+  return parsed && typeof parsed === 'object' ? parsed : {};
 }
 
 export function getMediaActivityLog(targetId: string): MediaActivityLog {
@@ -1623,17 +1535,7 @@ export function getMediaActivityLog(targetId: string): MediaActivityLog {
 }
 
 function saveAllMediaActivityLogs(all: Record<string, MediaActivityLog>): void {
-  const now = Date.now();
-  try {
-    localStorage.setItem(MEDIA_ACTIVITY_KEY, JSON.stringify(all));
-    localStorage.setItem(MEDIA_ACTIVITY_KEY + '_updated_at', String(now));
-    window.dispatchEvent(new CustomEvent('ndh-media-activity-updated'));
-  } catch {}
-  setDoc(
-    doc(db, 'app_settings', 'media_activity_logs'),
-    { logsMap: all, updatedAt: now },
-    { merge: false }
-  ).catch(() => {});
+  writePersistedKey(MEDIA_ACTIVITY_KEY, all, { eventName: 'ndh-media-activity-updated' });
 }
 
 export function recordMediaView(
@@ -1646,6 +1548,11 @@ export function recordMediaView(
     return getMediaActivityLog(targetId);
   }
 
+  const actorKey = `${normalizeVietnamese(resolved.userName)}::${resolved.userClass || ''}`;
+  if (hasViewedInCurrentSession(targetId, actorKey)) {
+    return getMediaActivityLog(targetId);
+  }
+
   const all = getAllMediaActivityLogs();
   const current: MediaActivityLog = all[targetId] || {
     targetId,
@@ -1654,13 +1561,13 @@ export function recordMediaView(
     writes: [],
   };
 
-  // Check if this exact student is already the most recent viewer to avoid redundant Firestore writes on re-renders
-  const existingFirst = current.views?.[0];
-  if (
-    existingFirst &&
-    normalizeVietnamese(existingFirst.userName) === normalizeVietnamese(resolved.userName) &&
-    (existingFirst.userClass || '') === (resolved.userClass || '')
-  ) {
+  // Check if this exact student is already in the views list so we don't trigger unnecessary network pushes
+  const alreadyViewed = (current.views || []).some(
+    (v) =>
+      normalizeVietnamese(v.userName) === normalizeVietnamese(resolved.userName) &&
+      (v.userClass || '') === (resolved.userClass || '')
+  );
+  if (alreadyViewed) {
     return getMediaActivityLog(targetId);
   }
 
@@ -1872,28 +1779,18 @@ export const DEFAULT_REFERENCE_MATERIALS: MaterialItem[] = [
 ];
 
 export function getStoredMaterials(): MaterialItem[] {
-  try {
-    const raw = localStorage.getItem(REFERENCE_MATERIALS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch {}
+  const parsed = readPersistedKey<MaterialItem[]>(
+    REFERENCE_MATERIALS_KEY,
+    DEFAULT_REFERENCE_MATERIALS
+  );
+  if (Array.isArray(parsed) && parsed.length > 0) return parsed;
   return DEFAULT_REFERENCE_MATERIALS;
 }
 
 export function saveAllMaterials(items: MaterialItem[]): MaterialItem[] {
-  const now = Date.now();
-  try {
-    localStorage.setItem(REFERENCE_MATERIALS_KEY, JSON.stringify(items));
-    localStorage.setItem(REFERENCE_MATERIALS_KEY + '_updated_at', String(now));
-    window.dispatchEvent(new CustomEvent('ndh-materials-updated'));
-  } catch {}
-  setDoc(
-    doc(db, 'app_settings', 'reference_materials'),
-    { items, updatedAt: now },
-    { merge: false }
-  ).catch(() => {});
+  writePersistedKey(REFERENCE_MATERIALS_KEY, items, {
+    eventName: 'ndh-materials-updated',
+  });
   return items;
 }
 
@@ -1918,6 +1815,7 @@ export function saveMaterialItem(item: MaterialItem): MaterialItem[] {
 }
 
 export function deleteMaterialItem(id: string): MaterialItem[] {
+  markItemDeleted(id);
   const current = getStoredMaterials();
   const next = current.filter((m) => m.id !== id);
   return saveAllMaterials(next);
@@ -1988,28 +1886,18 @@ export const DEFAULT_VIDEO_EXPERIMENTS: VideoExperimentItem[] = [
 ];
 
 export function getStoredExperiments(): VideoExperimentItem[] {
-  try {
-    const raw = localStorage.getItem(VIDEO_EXPERIMENTS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch {}
+  const parsed = readPersistedKey<VideoExperimentItem[]>(
+    VIDEO_EXPERIMENTS_KEY,
+    DEFAULT_VIDEO_EXPERIMENTS
+  );
+  if (Array.isArray(parsed) && parsed.length > 0) return parsed;
   return DEFAULT_VIDEO_EXPERIMENTS;
 }
 
 export function saveAllExperiments(items: VideoExperimentItem[]): VideoExperimentItem[] {
-  const now = Date.now();
-  try {
-    localStorage.setItem(VIDEO_EXPERIMENTS_KEY, JSON.stringify(items));
-    localStorage.setItem(VIDEO_EXPERIMENTS_KEY + '_updated_at', String(now));
-    window.dispatchEvent(new CustomEvent('ndh-experiments-updated'));
-  } catch {}
-  setDoc(
-    doc(db, 'app_settings', 'video_experiments'),
-    { items, updatedAt: now },
-    { merge: false }
-  ).catch(() => {});
+  writePersistedKey(VIDEO_EXPERIMENTS_KEY, items, {
+    eventName: 'ndh-experiments-updated',
+  });
   return items;
 }
 
@@ -2035,6 +1923,7 @@ export function saveExperimentItem(item: VideoExperimentItem): VideoExperimentIt
 }
 
 export function deleteExperimentItem(id: string): VideoExperimentItem[] {
+  markItemDeleted(id);
   const current = getStoredExperiments();
   const next = current.filter((e) => e.id !== id);
   return saveAllExperiments(next);
@@ -2128,36 +2017,24 @@ export const DEFAULT_YOUTUBE_CHANNEL_DATA: YoutubeChannelData = {
 };
 
 export function getStoredYoutubeChannelData(): YoutubeChannelData {
-  try {
-    const raw = localStorage.getItem(YOUTUBE_CHANNEL_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.posts)) {
-        return {
-          ...DEFAULT_YOUTUBE_CHANNEL_DATA,
-          ...parsed,
-          globalLessonLinks: Array.isArray(parsed.globalLessonLinks)
-            ? parsed.globalLessonLinks
-            : DEFAULT_YOUTUBE_CHANNEL_DATA.globalLessonLinks,
-        };
-      }
-    }
-  } catch {}
+  const parsed = readPersistedKey<YoutubeChannelData>(
+    YOUTUBE_CHANNEL_KEY,
+    DEFAULT_YOUTUBE_CHANNEL_DATA
+  );
+  if (parsed && Array.isArray(parsed.posts)) {
+    return {
+      ...DEFAULT_YOUTUBE_CHANNEL_DATA,
+      ...parsed,
+      globalLessonLinks: Array.isArray(parsed.globalLessonLinks)
+        ? parsed.globalLessonLinks
+        : DEFAULT_YOUTUBE_CHANNEL_DATA.globalLessonLinks,
+    };
+  }
   return DEFAULT_YOUTUBE_CHANNEL_DATA;
 }
 
 export function saveYoutubeChannelData(data: YoutubeChannelData): YoutubeChannelData {
-  const now = Date.now();
-  try {
-    localStorage.setItem(YOUTUBE_CHANNEL_KEY, JSON.stringify(data));
-    localStorage.setItem(YOUTUBE_CHANNEL_KEY + '_updated_at', String(now));
-    window.dispatchEvent(new CustomEvent('ndh-youtube-updated'));
-  } catch {}
-  setDoc(
-    doc(db, 'app_settings', 'youtube_channel_data'),
-    { data, updatedAt: now },
-    { merge: false }
-  ).catch(() => {});
+  writePersistedKey(YOUTUBE_CHANNEL_KEY, data, { eventName: 'ndh-youtube-updated' });
   return data;
 }
 
@@ -2223,30 +2100,20 @@ export const DEFAULT_ONLINE_CLASS_SESSIONS: OnlineClassSessionItem[] = [
 ];
 
 export function getStoredOnlineSessions(): OnlineClassSessionItem[] {
-  try {
-    const raw = localStorage.getItem(ONLINE_CLASS_SESSIONS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch {}
+  const parsed = readPersistedKey<OnlineClassSessionItem[]>(
+    ONLINE_CLASS_SESSIONS_KEY,
+    DEFAULT_ONLINE_CLASS_SESSIONS
+  );
+  if (Array.isArray(parsed) && parsed.length > 0) return parsed;
   return DEFAULT_ONLINE_CLASS_SESSIONS;
 }
 
 export function saveAllOnlineSessions(
   items: OnlineClassSessionItem[]
 ): OnlineClassSessionItem[] {
-  const now = Date.now();
-  try {
-    localStorage.setItem(ONLINE_CLASS_SESSIONS_KEY, JSON.stringify(items));
-    localStorage.setItem(ONLINE_CLASS_SESSIONS_KEY + '_updated_at', String(now));
-    window.dispatchEvent(new CustomEvent('ndh-online-sessions-updated'));
-  } catch {}
-  setDoc(
-    doc(db, 'app_settings', 'online_class_sessions'),
-    { items, updatedAt: now },
-    { merge: false }
-  ).catch(() => {});
+  writePersistedKey(ONLINE_CLASS_SESSIONS_KEY, items, {
+    eventName: 'ndh-online-sessions-updated',
+  });
   return items;
 }
 
@@ -2273,157 +2140,14 @@ export function saveOnlineSessionItem(
 }
 
 export function deleteOnlineSessionItem(id: string): OnlineClassSessionItem[] {
+  markItemDeleted(id);
   const current = getStoredOnlineSessions();
   const next = current.filter((s) => s.id !== id);
   return saveAllOnlineSessions(next);
 }
 
-// Real-time Cloud Firestore listeners for Exams, Results, Submissions, Comments, Materials, Experiments, YouTube & Activity Logs
-let examCloudListenersReady = false;
 export function initExamCloudListeners() {
-  if (typeof window === 'undefined' || examCloudListenersReady) return;
-  examCloudListenersReady = true;
-
-  const syncListDoc = (
-    docKey: string,
-    storageKey: string,
-    eventName: string,
-    getCurrent: () => any[]
-  ) => {
-    try {
-      onSnapshot(
-        doc(db, 'app_settings', docKey),
-        (snap) => {
-          if (!snap.exists()) {
-            const current = getCurrent();
-            if (Array.isArray(current) && current.length > 0) {
-              setDoc(
-                doc(db, 'app_settings', docKey),
-                { items: current, updatedAt: Date.now() },
-                { merge: false }
-              ).catch(() => {});
-            }
-            return;
-          }
-          const data = snap.data();
-          if (!data || !Array.isArray(data.items)) return;
-          const cloudUpdatedAt = Number(data.updatedAt || 0);
-          const localUpdatedAt = Number(localStorage.getItem(storageKey + '_updated_at') || 0);
-          if (cloudUpdatedAt >= localUpdatedAt || localUpdatedAt === 0) {
-            localStorage.setItem(storageKey, JSON.stringify(data.items));
-            localStorage.setItem(storageKey + '_updated_at', String(cloudUpdatedAt || Date.now()));
-            window.dispatchEvent(new CustomEvent(eventName));
-          }
-        },
-        () => {}
-      );
-    } catch {}
-  };
-
-  syncListDoc('exam_bank', STORAGE_KEY, 'ndh-exams-updated', getStoredExams);
-  syncListDoc('exam_results', EXAM_RESULTS_KEY, 'ndh-results-updated', getStoredExamResults);
-  syncListDoc(
-    'quiz_submissions',
-    QUIZ_SUBMISSIONS_KEY,
-    'ndh-quiz-submissions-updated',
-    getStoredQuizSubmissions
-  );
-  syncListDoc(
-    'homework_submissions',
-    HOMEWORK_SUBMISSIONS_KEY,
-    'ndh-hw-submissions-updated',
-    getStoredHomeworkSubmissions
-  );
-  syncListDoc(
-    'reference_materials',
-    REFERENCE_MATERIALS_KEY,
-    'ndh-materials-updated',
-    getStoredMaterials
-  );
-  syncListDoc(
-    'video_experiments',
-    VIDEO_EXPERIMENTS_KEY,
-    'ndh-experiments-updated',
-    getStoredExperiments
-  );
-  syncListDoc(
-    'online_class_sessions',
-    ONLINE_CLASS_SESSIONS_KEY,
-    'ndh-online-sessions-updated',
-    getStoredOnlineSessions
-  );
-
-  // Sync YouTube Channel Data
-  try {
-    onSnapshot(
-      doc(db, 'app_settings', 'youtube_channel_data'),
-      (snap) => {
-        if (!snap.exists()) return;
-        const payload = snap.data();
-        if (!payload || !payload.data) return;
-        const cloudUpdatedAt = Number(payload.updatedAt || 0);
-        const localUpdatedAt = Number(
-          localStorage.getItem(YOUTUBE_CHANNEL_KEY + '_updated_at') || 0
-        );
-        if (cloudUpdatedAt >= localUpdatedAt || localUpdatedAt === 0) {
-          localStorage.setItem(YOUTUBE_CHANNEL_KEY, JSON.stringify(payload.data));
-          localStorage.setItem(
-            YOUTUBE_CHANNEL_KEY + '_updated_at',
-            String(cloudUpdatedAt || Date.now())
-          );
-          window.dispatchEvent(new CustomEvent('ndh-youtube-updated'));
-        }
-      },
-      () => {}
-    );
-  } catch {}
-
-  // Sync Media Activity Logs (Views & Downloads)
-  try {
-    onSnapshot(
-      doc(db, 'app_settings', 'media_activity_logs'),
-      (snap) => {
-        if (!snap.exists()) return;
-        const payload = snap.data();
-        if (!payload || !payload.logsMap) return;
-        const cloudUpdatedAt = Number(payload.updatedAt || 0);
-        const localUpdatedAt = Number(
-          localStorage.getItem(MEDIA_ACTIVITY_KEY + '_updated_at') || 0
-        );
-        if (cloudUpdatedAt >= localUpdatedAt || localUpdatedAt === 0) {
-          localStorage.setItem(MEDIA_ACTIVITY_KEY, JSON.stringify(payload.logsMap));
-          localStorage.setItem(
-            MEDIA_ACTIVITY_KEY + '_updated_at',
-            String(cloudUpdatedAt || Date.now())
-          );
-          window.dispatchEvent(new CustomEvent('ndh-media-activity-updated'));
-        }
-      },
-      () => {}
-    );
-  } catch {}
-
-  try {
-    onSnapshot(
-      doc(db, 'app_settings', 'item_comments'),
-      (snap) => {
-        if (!snap.exists()) return;
-        const data = snap.data();
-        if (!data || !data.commentsMap) return;
-        const cloudUpdatedAt = Number(data.updatedAt || 0);
-        const localUpdatedAt = Number(localStorage.getItem(ITEM_COMMENTS_KEY + '_updated_at') || 0);
-        if (cloudUpdatedAt >= localUpdatedAt || localUpdatedAt === 0) {
-          localStorage.setItem(ITEM_COMMENTS_KEY, JSON.stringify(data.commentsMap));
-          localStorage.setItem(
-            ITEM_COMMENTS_KEY + '_updated_at',
-            String(cloudUpdatedAt || Date.now())
-          );
-          window.dispatchEvent(new CustomEvent('ndh-comments-updated'));
-        }
-      },
-      () => {}
-    );
-  } catch {}
+  initCloudPersistence();
 }
 
 if (typeof window !== 'undefined') {
