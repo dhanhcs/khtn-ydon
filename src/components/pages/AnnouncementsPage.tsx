@@ -13,8 +13,11 @@ import {
 import { AnnouncementItem, FileAttachment } from '../../types';
 import { processUploadedFile } from '../../utils/examStorage';
 import { AttachmentList, InteractiveCommentSection, ItemActivityLogBar } from '../AttachmentAndCommentSection';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
-import { db } from '../../firebase/config';
+import {
+  readPersistedKey,
+  writePersistedKey,
+  markItemDeleted,
+} from '../../utils/cloudPersistence';
 
 export const SAMPLE_ANNOUNCEMENTS: AnnouncementItem[] = [
   {
@@ -44,13 +47,14 @@ export const AnnouncementsPage: React.FC = () => {
   const { isAdmin } = useAuth();
 
   const [announcements, setAnnouncements] = useState<AnnouncementItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('ndh_announcements');
-      return saved ? JSON.parse(saved) : SAMPLE_ANNOUNCEMENTS;
-    } catch {
-      return SAMPLE_ANNOUNCEMENTS;
-    }
+    const saved = readPersistedKey<AnnouncementItem[]>('ndh_announcements', SAMPLE_ANNOUNCEMENTS);
+    return Array.isArray(saved) && saved.length > 0 ? saved : SAMPLE_ANNOUNCEMENTS;
   });
+
+  const persistAnnouncements = (nextList: AnnouncementItem[]) => {
+    setAnnouncements(nextList);
+    writePersistedKey('ndh_announcements', nextList, { eventName: 'ndh-announcements-updated' });
+  };
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [form, setForm] = useState({
@@ -61,53 +65,16 @@ export const AnnouncementsPage: React.FC = () => {
     attachments: [] as FileAttachment[],
   });
   const fileRef = useRef<HTMLInputElement>(null);
-  const isRemoteAnnRef = useRef(false);
-  const isFirstAnnMountRef = useRef(true);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('ndh_announcements', JSON.stringify(announcements));
-    } catch {}
-    if (isFirstAnnMountRef.current) {
-      isFirstAnnMountRef.current = false;
-      return;
-    }
-    if (isRemoteAnnRef.current) {
-      isRemoteAnnRef.current = false;
-      return;
-    }
-    const now = Date.now();
-    try {
-      localStorage.setItem('ndh_announcements_updated_at', String(now));
-    } catch {}
-    setDoc(
-      doc(db, 'app_settings', 'announcements_list'),
-      { items: announcements, updatedAt: now },
-      { merge: false }
-    ).catch(() => {});
-  }, [announcements]);
-
-  useEffect(() => {
-    const unsub = onSnapshot(
-      doc(db, 'app_settings', 'announcements_list'),
-      (snap) => {
-        if (!snap.exists()) return;
-        const data = snap.data();
-        if (!data || !Array.isArray(data.items)) return;
-        const cloudUpdatedAt = Number(data.updatedAt || 0);
-        const localUpdatedAt = Number(localStorage.getItem('ndh_announcements_updated_at') || 0);
-        if (cloudUpdatedAt >= localUpdatedAt || localUpdatedAt === 0) {
-          isRemoteAnnRef.current = true;
-          setAnnouncements(data.items);
-          try {
-            localStorage.setItem('ndh_announcements', JSON.stringify(data.items));
-            localStorage.setItem('ndh_announcements_updated_at', String(cloudUpdatedAt || Date.now()));
-          } catch {}
-        }
-      },
-      () => {}
-    );
-    return () => unsub();
+    const refresh = () => {
+      const latest = readPersistedKey<AnnouncementItem[]>('ndh_announcements', SAMPLE_ANNOUNCEMENTS);
+      if (Array.isArray(latest) && latest.length > 0) {
+        setAnnouncements(latest);
+      }
+    };
+    window.addEventListener('ndh-announcements-updated', refresh);
+    return () => window.removeEventListener('ndh-announcements-updated', refresh);
   }, []);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -148,7 +115,7 @@ export const AnnouncementsPage: React.FC = () => {
       createdAt: new Date().toLocaleDateString('vi-VN'),
     };
 
-    setAnnouncements([created, ...announcements]);
+    persistAnnouncements([created, ...announcements]);
     setForm({
       title: '',
       content: '',
@@ -221,7 +188,8 @@ export const AnnouncementsPage: React.FC = () => {
                     <button
                       onClick={() => {
                         if (confirm('Xóa thông báo này?')) {
-                          setAnnouncements(announcements.filter((i) => (i.id || '') !== annId));
+                          markItemDeleted(annId);
+                          persistAnnouncements(announcements.filter((i) => (i.id || '') !== annId));
                           showToast('Đã xóa thông báo.', 'info');
                         }
                       }}

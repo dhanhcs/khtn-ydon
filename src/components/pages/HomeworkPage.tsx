@@ -32,8 +32,11 @@ import {
 } from '../../utils/examStorage';
 import { getActiveStudentRoster, normalizeVietnameseText } from '../../utils/studentRoster';
 import { AttachmentList, InteractiveCommentSection, ItemActivityLogBar } from '../AttachmentAndCommentSection';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
-import { db } from '../../firebase/config';
+import {
+  readPersistedKey,
+  writePersistedKey,
+  markItemDeleted,
+} from '../../utils/cloudPersistence';
 
 export const SAMPLE_HOMEWORKS: HomeworkItem[] = [
   {
@@ -84,13 +87,14 @@ export const HomeworkPage: React.FC = () => {
   const canManageHw = isAdmin || isTeacher;
 
   const [homeworks, setHomeworks] = useState<HomeworkItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('ndh_homeworks');
-      return saved ? JSON.parse(saved) : SAMPLE_HOMEWORKS;
-    } catch {
-      return SAMPLE_HOMEWORKS;
-    }
+    const saved = readPersistedKey<HomeworkItem[]>('ndh_homeworks', SAMPLE_HOMEWORKS);
+    return Array.isArray(saved) && saved.length > 0 ? saved : SAMPLE_HOMEWORKS;
   });
+
+  const persistHomeworksList = (nextList: HomeworkItem[]) => {
+    setHomeworks(nextList);
+    writePersistedKey('ndh_homeworks', nextList, { eventName: 'ndh-homeworks-updated' });
+  };
 
   const [submissions, setSubmissions] = useState<HomeworkSubmission[]>(() =>
     getStoredHomeworkSubmissions()
@@ -135,59 +139,20 @@ export const HomeworkPage: React.FC = () => {
     teacherFeedback: 'Bài làm trình bày rõ ràng, lập phương trình hóa học và tính số mol chính xác.',
   });
 
-  const isRemoteHwUpdateRef = useRef(false);
-  const isFirstHwMountRef = useRef(true);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('ndh_homeworks', JSON.stringify(homeworks));
-    } catch {}
-    if (isFirstHwMountRef.current) {
-      isFirstHwMountRef.current = false;
-      return;
-    }
-    if (isRemoteHwUpdateRef.current) {
-      isRemoteHwUpdateRef.current = false;
-      return;
-    }
-    const now = Date.now();
-    try {
-      localStorage.setItem('ndh_homeworks_updated_at', String(now));
-    } catch {}
-    setDoc(
-      doc(db, 'app_settings', 'homeworks_list'),
-      { items: homeworks, updatedAt: now },
-      { merge: false }
-    ).catch(() => {});
-  }, [homeworks]);
-
   useEffect(() => {
     const refreshSubs = () => setSubmissions(getStoredHomeworkSubmissions());
+    const refreshHw = () => {
+      const latest = readPersistedKey<HomeworkItem[]>('ndh_homeworks', SAMPLE_HOMEWORKS);
+      if (Array.isArray(latest) && latest.length > 0) {
+        setHomeworks(latest);
+      }
+    };
     window.addEventListener('ndh-hw-submissions-updated', refreshSubs);
-
-    const unsubHw = onSnapshot(
-      doc(db, 'app_settings', 'homeworks_list'),
-      (snap) => {
-        if (!snap.exists()) return;
-        const data = snap.data();
-        if (!data || !Array.isArray(data.items)) return;
-        const cloudUpdatedAt = Number(data.updatedAt || 0);
-        const localUpdatedAt = Number(localStorage.getItem('ndh_homeworks_updated_at') || 0);
-        if (cloudUpdatedAt >= localUpdatedAt || localUpdatedAt === 0) {
-          isRemoteHwUpdateRef.current = true;
-          setHomeworks(data.items);
-          try {
-            localStorage.setItem('ndh_homeworks', JSON.stringify(data.items));
-            localStorage.setItem('ndh_homeworks_updated_at', String(cloudUpdatedAt || Date.now()));
-          } catch {}
-        }
-      },
-      () => {}
-    );
+    window.addEventListener('ndh-homeworks-updated', refreshHw);
 
     return () => {
       window.removeEventListener('ndh-hw-submissions-updated', refreshSubs);
-      unsubHw();
+      window.removeEventListener('ndh-homeworks-updated', refreshHw);
     };
   }, []);
 
@@ -232,19 +197,18 @@ export const HomeworkPage: React.FC = () => {
       for (let i = 0; i < files.length; i++) {
         processed.push(await processUploadedFile(files[i]));
       }
-      setHomeworks((prev) =>
-        prev.map((hw) => {
-          if ((hw.id || 'hw-default') === hwId) {
-            const existing = buildEffectiveHomeworkAttachments(hw);
-            return {
-              ...hw,
-              fileName: processed[0]?.name || hw.fileName,
-              attachments: [...existing, ...processed],
-            };
-          }
-          return hw;
-        })
-      );
+      const updatedList = homeworks.map((hw) => {
+        if ((hw.id || 'hw-default') === hwId) {
+          const existing = buildEffectiveHomeworkAttachments(hw);
+          return {
+            ...hw,
+            fileName: processed[0]?.name || hw.fileName,
+            attachments: [...existing, ...processed],
+          };
+        }
+        return hw;
+      });
+      persistHomeworksList(updatedList);
       showToast(
         `Đã up thêm ${processed.length} file (Word / PDF / Ảnh) vào bài tập! Có thể bấm "Xem" hoặc "Tải" ngay.`,
         'success'
@@ -258,20 +222,19 @@ export const HomeworkPage: React.FC = () => {
 
   // Remove a specific attachment from a Homework card (Admin)
   const handleRemoveHomeworkAttachment = (hwId: string, attId: string) => {
-    setHomeworks((prev) =>
-      prev.map((hw) => {
-        if ((hw.id || 'hw-default') === hwId) {
-          const existing = buildEffectiveHomeworkAttachments(hw);
-          const nextAtts = existing.filter((a) => a.id !== attId);
-          return {
-            ...hw,
-            fileName: nextAtts[0]?.name || '',
-            attachments: nextAtts,
-          };
-        }
-        return hw;
-      })
-    );
+    const updatedList = homeworks.map((hw) => {
+      if ((hw.id || 'hw-default') === hwId) {
+        const existing = buildEffectiveHomeworkAttachments(hw);
+        const nextAtts = existing.filter((a) => a.id !== attId);
+        return {
+          ...hw,
+          fileName: nextAtts[0]?.name || '',
+          attachments: nextAtts,
+        };
+      }
+      return hw;
+    });
+    persistHomeworksList(updatedList);
     showToast('Đã xóa tệp đính kèm khỏi bài tập.', 'info');
   };
 
@@ -343,8 +306,8 @@ export const HomeworkPage: React.FC = () => {
             } as HomeworkItem)
           : h
       );
-      setHomeworks(updated);
-      showToast('Đã cập nhật bài tập và hiển thị trực tiếp trên ứng dụng!', 'success');
+      persistHomeworksList(updated);
+      showToast('Đã cập nhật bài tập và lưu vĩnh viễn trên ứng dụng!', 'success');
     } else {
       const created: HomeworkItem = {
         id: 'hw-' + Date.now(),
@@ -359,8 +322,8 @@ export const HomeworkPage: React.FC = () => {
         attachments: newHw.attachments || [],
         createdAt: new Date().toISOString(),
       };
-      setHomeworks([created, ...homeworks]);
-      showToast('Đã up bài tập mới thành công! Bài tập đã hiển thị trực tiếp trên app.', 'success');
+      persistHomeworksList([created, ...homeworks]);
+      showToast('Đã up bài tập mới thành công! Dữ liệu đã được lưu trữ vĩnh viễn.', 'success');
     }
 
     setAdminQuickPass('');
@@ -886,7 +849,8 @@ export const HomeworkPage: React.FC = () => {
                     <button
                       onClick={() => {
                         if (confirm('Xóa bài tập này?')) {
-                          setHomeworks(homeworks.filter((i) => i.id !== hw.id));
+                          if (hw.id) markItemDeleted(hw.id);
+                          persistHomeworksList(homeworks.filter((i) => i.id !== hw.id));
                           showToast('Đã xóa bài tập.', 'info');
                         }
                       }}
