@@ -155,6 +155,15 @@ function normalizeStudentTuitionMonths(student: any): any {
 }
 
 // 1b-2. Persistent Student Roster store (syncs teacher's uploaded student list across devices & environments)
+try {
+  if (!fs.existsSync(ROSTER_FILE)) {
+    fs.writeFileSync(ROSTER_FILE, '[]', 'utf-8');
+  }
+  if (!fs.existsSync(USERS_FILE)) {
+    fs.writeFileSync(USERS_FILE, '[]', 'utf-8');
+  }
+} catch {}
+
 function readServerRoster(): any[] {
   try {
     if (fs.existsSync(ROSTER_FILE)) {
@@ -172,10 +181,13 @@ function readServerRoster(): any[] {
 let serverRosterUpdatedAt = (() => {
   try {
     if (fs.existsSync(ROSTER_FILE)) {
-      return fs.statSync(ROSTER_FILE).mtimeMs;
+      const list = readServerRoster();
+      if (list.length > 0) {
+        return fs.statSync(ROSTER_FILE).mtimeMs;
+      }
     }
   } catch {}
-  return Date.now();
+  return 0;
 })();
 
 function normalizeServerStr(str: string): string {

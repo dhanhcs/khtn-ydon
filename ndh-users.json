@@ -8,10 +8,10 @@
     "role": "student",
     "isOfficial": true,
     "status": "active",
-    "enrolledClass": "H6.1",
+    "enrolledClass": "H9.1",
     "school": "NVX",
-    "grade": "Khối 6",
-    "studentCode": "NDH-H61-87",
+    "grade": "Khối 9",
+    "studentCode": "NDH-H91-87",
     "phone": "",
     "createdAt": "2026-10-18T11:41:02.366Z",
     "updatedAt": "2026-10-18T12:05:00.000Z"

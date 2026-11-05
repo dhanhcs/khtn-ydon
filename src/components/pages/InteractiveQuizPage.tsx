@@ -546,6 +546,7 @@ export const InteractiveQuizPage: React.FC = () => {
       grade: uploadExamGrade,
       topic: uploadExamNote.trim() || 'Đề bài đính kèm (Word / PDF / Ảnh) - Xem & Làm bài trực tiếp',
       durationMinutes: Number(uploadExamDuration) || 45,
+      totalPoints: 10,
       status: 'published',
       targetClasses: uploadExamClass,
       createdAt: new Date().toLocaleDateString('vi-VN'),
@@ -563,8 +564,6 @@ export const InteractiveQuizPage: React.FC = () => {
           points: 10,
         },
       ],
-      questionsCount: parsedMc.length + 1,
-      questions: parsedMc,
     };
 
     const updated = saveExamItem(newQuiz);
