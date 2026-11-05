@@ -405,19 +405,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       await fetchProfile(user);
     });
 
-    const unsubUsers = onSnapshot(
-      doc(db, 'app_settings', 'registered_users'),
-      (snap) => {
-        if (!snap.exists()) return;
-        const fsUsers = Array.isArray(snap.data()?.users) ? snap.data().users : [];
-        if (fsUsers.length > 0) {
-          const merged = mergeAccountLists(fsUsers, getLocalRegisteredAccounts());
-          saveLocalRegisteredAccounts(merged);
-          setRegisteredAccounts(merged);
-        }
-      },
-      () => {}
-    );
+    const handleUsersUpdated = () => {
+      setRegisteredAccounts(getLocalRegisteredAccounts());
+    };
+    window.addEventListener('ndh-users-updated', handleUsersUpdated);
 
     const handleRosterUpdated = () => {
       syncRegisteredAccounts();
@@ -440,7 +431,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       unsubscribe();
-      unsubUsers();
+      window.removeEventListener('ndh-users-updated', handleUsersUpdated);
       window.removeEventListener('ndh-roster-updated', handleRosterUpdated);
     };
   }, [syncRegisteredAccounts]);
@@ -481,7 +472,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const normEmailPrefix = normEmailInput.split('@')[0];
       const normNameInput = normalizeVietnamese(rawInput);
 
-      // 0. Ensure latest student roster from Cloud Firestore is synced before checking login (critical for Netlify & mobile)
+      // 0. Ensure latest student roster is synced before checking login
       try {
         await syncStudentRosterFromServer();
       } catch {
@@ -510,24 +501,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               );
               saveLocalRegisteredAccounts(updatedList);
               setRegisteredAccounts(updatedList);
-              setDoc(
-                doc(db, 'app_settings', 'registered_users'),
-                {
-                  users: updatedList,
-                  count: updatedList.length,
-                  updatedAt: Date.now(),
-                },
-                { merge: false }
-              ).catch(() => {});
             }
             return activateStudentSession(data.user as UserProfile);
           }
         }
       } catch {
-        // Fallback to Cloud Firestore & client-side roster on Netlify
+        // Fallback to Universal Cloud Store & client-side roster
       }
 
-      // 2. Sync & check registered accounts from Cloud Firestore + local storage
+      // 2. Sync & check registered accounts from Universal Cloud Store + local storage
       const latestAccounts = await syncRegisteredAccounts();
       const matchedLocal = latestAccounts.find((acc) => {
         const accEmailNorm = normalizeEmailClient(acc.email || '');
@@ -556,15 +538,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const updatedList = mergeAccountLists([updatedStored], latestAccounts);
         saveLocalRegisteredAccounts(updatedList);
         setRegisteredAccounts(updatedList);
-        setDoc(
-          doc(db, 'app_settings', 'registered_users'),
-          {
-            users: updatedList,
-            count: updatedList.length,
-            updatedAt: Date.now(),
-          },
-          { merge: false }
-        ).catch(() => {});
 
         const { passwordHash: _omitted, ...rest } = updatedStored;
         return activateStudentSession(rest as UserProfile);
@@ -601,16 +574,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const updatedList = mergeAccountLists([newStored], latestAccounts);
         saveLocalRegisteredAccounts(updatedList);
         setRegisteredAccounts(updatedList);
-
-        setDoc(
-          doc(db, 'app_settings', 'registered_users'),
-          {
-            users: updatedList,
-            count: updatedList.length,
-            updatedAt: Date.now(),
-          },
-          { merge: false }
-        ).catch(() => {});
 
         fetch('/api/auth/register', {
           method: 'POST',
@@ -675,7 +638,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error('Mật khẩu phải có ít nhất 4 ký tự.');
       }
 
-      // 0. Sync latest student roster from Cloud Firestore before checking (critical on Netlify)
+      // 0. Sync latest student roster before checking
       try {
         await syncStudentRosterFromServer();
       } catch {
@@ -738,7 +701,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         }
       } catch {
-        // Proceed with Cloud Firestore + local storage registration on Netlify
+        // Proceed with Universal Cloud Store + local storage registration
       }
 
       const newProfile: UserProfile = {
@@ -756,7 +719,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         createdAt: new Date().toISOString(),
       };
 
-      // 3. Save account in local & Cloud Firestore registered users list so student can re-login on any device
+      // 3. Save account in local & Universal Cloud Store registered users list so student can re-login on any device
       const storedAccount: LocalStoredAccount = {
         ...newProfile,
         rawEmail: rawEmail || cleanEmail,
@@ -765,20 +728,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const merged = mergeAccountLists([storedAccount], getLocalRegisteredAccounts());
       saveLocalRegisteredAccounts(merged);
       setRegisteredAccounts(merged);
-
-      try {
-        await setDoc(
-          doc(db, 'app_settings', 'registered_users'),
-          {
-            users: merged,
-            count: merged.length,
-            updatedAt: Date.now(),
-          },
-          { merge: false }
-        );
-      } catch {
-        // Ignore offline/firestore write warning
-      }
 
       // 4. Activate student session immediately
       const activated = activateStudentSession(newProfile);

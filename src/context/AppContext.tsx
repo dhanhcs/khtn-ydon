@@ -274,24 +274,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     let updatedSnapshot: AppSettings = { ...settings, ...newSettings };
     setSettings((prev) => {
       updatedSnapshot = { ...prev, ...newSettings };
-      try {
-        localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(updatedSnapshot));
-        localStorage.setItem(LOCAL_SETTINGS_KEY + '_updated_at', String(now));
-      } catch (e) {
-        console.warn('Could not save settings to localStorage:', e);
-      }
       return updatedSnapshot;
     });
 
-    try {
-      await setDoc(
-        doc(db, 'app_settings', 'main_config'),
-        { ...updatedSnapshot, updatedAt: now },
-        { merge: true }
-      );
-    } catch (error: any) {
-      console.warn('Firestore save warning:', error);
-    }
+    writePersistedKey(LOCAL_SETTINGS_KEY, updatedSnapshot, { updatedAt: now });
 
     try {
       await fetch('/api/settings', {
