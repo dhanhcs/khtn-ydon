@@ -28,6 +28,7 @@ import {
   recordMediaDownload,
   clearMediaActivityLog,
 } from '../utils/examStorage';
+import { resolveAttachmentDataUrl } from '../utils/cloudPersistence';
 import { getActiveStudentRoster, verifyStudentInRoster } from '../utils/studentRoster';
 import { useAuth } from '../context/AuthContext';
 import { useApp } from '../context/AppContext';
@@ -345,9 +346,26 @@ const AttachmentContentRenderer: React.FC<{
   isModal?: boolean;
   onExpandModal?: () => void;
 }> = ({ attachment, isModal = false, onExpandModal }) => {
+  const [resolvedDataUrl, setResolvedDataUrl] = useState<string>(() =>
+    attachment.dataUrl && !attachment.dataUrl.startsWith('__idb_att__:')
+      ? attachment.dataUrl
+      : ''
+  );
   const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [dynamicHtml, setDynamicHtml] = useState<string>(attachment.extractedHtml || '');
   const [dynamicText, setDynamicText] = useState<string>(attachment.extractedText || '');
+
+  useEffect(() => {
+    let active = true;
+    resolveAttachmentDataUrl(attachment).then((url) => {
+      if (active && url) {
+        setResolvedDataUrl(url);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [attachment]);
 
   useEffect(() => {
     setDynamicHtml(attachment.extractedHtml || '');
@@ -357,12 +375,12 @@ const AttachmentContentRenderer: React.FC<{
     if (
       attachment.type === 'word' &&
       !attachment.extractedHtml &&
-      attachment.dataUrl &&
-      attachment.dataUrl.includes(';base64,') &&
+      resolvedDataUrl &&
+      resolvedDataUrl.includes(';base64,') &&
       attachment.name.toLowerCase().endsWith('.docx')
     ) {
       try {
-        const base64Part = attachment.dataUrl.split(';base64,')[1] || '';
+        const base64Part = resolvedDataUrl.split(';base64,')[1] || '';
         const binaryStr = atob(base64Part);
         const len = binaryStr.length;
         const bytes = new Uint8Array(len);
@@ -386,18 +404,18 @@ const AttachmentContentRenderer: React.FC<{
         }
       } catch {}
     }
-  }, [attachment]);
+  }, [attachment, resolvedDataUrl]);
 
   useEffect(() => {
-    if (attachment.type !== 'pdf' || !attachment.dataUrl) {
+    if (attachment.type !== 'pdf' || !resolvedDataUrl) {
       setPdfBlobUrl(null);
       return;
     }
 
     let createdUrl: string | null = null;
     try {
-      if (attachment.dataUrl.startsWith('data:')) {
-        const parts = attachment.dataUrl.split(',');
+      if (resolvedDataUrl.startsWith('data:')) {
+        const parts = resolvedDataUrl.split(',');
         const byteString = atob(parts[1] || '');
         const ab = new ArrayBuffer(byteString.length);
         const ia = new Uint8Array(ab);
@@ -408,10 +426,10 @@ const AttachmentContentRenderer: React.FC<{
         createdUrl = URL.createObjectURL(blob);
         setPdfBlobUrl(createdUrl);
       } else {
-        setPdfBlobUrl(attachment.dataUrl);
+        setPdfBlobUrl(resolvedDataUrl);
       }
     } catch {
-      setPdfBlobUrl(attachment.dataUrl);
+      setPdfBlobUrl(resolvedDataUrl);
     }
 
     return () => {
@@ -419,19 +437,23 @@ const AttachmentContentRenderer: React.FC<{
         URL.revokeObjectURL(createdUrl);
       }
     };
-  }, [attachment]);
+  }, [attachment.type, resolvedDataUrl]);
 
   if (attachment.type === 'image') {
     return (
       <div className="bg-slate-900/5 p-3 rounded-xl border border-slate-200 flex flex-col items-center">
-        <img
-          src={attachment.dataUrl}
-          alt={attachment.name}
-          onClick={onExpandModal}
-          className={`max-w-full object-contain rounded-lg shadow-xs border border-slate-200 bg-white ${
-            isModal ? 'max-h-[75vh]' : 'max-h-[460px] cursor-zoom-in'
-          }`}
-        />
+        {resolvedDataUrl ? (
+          <img
+            src={resolvedDataUrl}
+            alt={attachment.name}
+            onClick={onExpandModal}
+            className={`max-w-full object-contain rounded-lg shadow-xs border border-slate-200 bg-white ${
+              isModal ? 'max-h-[75vh]' : 'max-h-[460px] cursor-zoom-in'
+            }`}
+          />
+        ) : (
+          <div className="py-8 text-xs text-slate-500">Đang tải hình ảnh đính kèm...</div>
+        )}
       </div>
     );
   }
@@ -554,7 +576,7 @@ export const AttachmentList: React.FC<{
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    {isImg && att.dataUrl ? (
+                    {isImg && att.dataUrl && !att.dataUrl.startsWith('__idb_att__:') ? (
                       <img
                         src={att.dataUrl}
                         alt={att.name}
@@ -564,6 +586,10 @@ export const AttachmentList: React.FC<{
                         }}
                         className="w-9 h-9 rounded-lg object-cover border border-emerald-300 cursor-pointer shrink-0"
                       />
+                    ) : isImg ? (
+                      <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 shadow-2xs">
+                        ẢNH
+                      </div>
                     ) : isWord ? (
                       <div className="w-8 h-8 rounded-lg bg-blue-600 text-white font-black text-[10px] flex items-center justify-center shrink-0 shadow-2xs">
                         WORD
