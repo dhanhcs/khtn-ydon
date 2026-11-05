@@ -5,7 +5,9 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+// @ts-ignore
+import cloudStoreHandler from './api/cloud-store.js';
 
 dotenv.config();
 
@@ -76,6 +78,11 @@ app.get('/api/health', (req, res) => {
     geminiConfigured: !!process.env.GEMINI_API_KEY,
     adminMustChangePassword: adminCredentials.mustChangePassword,
   });
+});
+
+// 1a. Universal Cloud Persistence Store (Shared across Vercel, Netlify, and AI Studio)
+app.all('/api/cloud-store', async (req, res) => {
+  await cloudStoreHandler(req, res);
 });
 
 // 1b. Persistent App Settings & Logo store + automatic Favicon sync
@@ -392,104 +399,9 @@ function writeRegisteredUsers(users: any[]) {
   }
 }
 
-// Bootstrap Server <-> Cloud Firestore real-time synchronization on startup
+// Bootstrap Server startup without opening continuous Firestore onSnapshot listeners
 async function bootstrapServerCloudSync() {
-  if (!serverDb) return;
-  try {
-    // 1. Sync Student Roster between ndh-roster.json and Cloud Firestore app_settings/student_roster
-    const localRoster = readServerRoster();
-    const rosterRef = doc(serverDb, 'app_settings', 'student_roster');
-    const rosterSnap = await getDoc(rosterRef);
-
-    if (rosterSnap.exists()) {
-      const fsData = rosterSnap.data();
-      const cloudStudents = Array.isArray(fsData?.students)
-        ? fsData.students.map(normalizeStudentTuitionMonths)
-        : [];
-      const cloudUpdatedAt = Number(fsData?.updatedAt || 0);
-
-      if (
-        cloudStudents.length > 0 &&
-        (cloudUpdatedAt > serverRosterUpdatedAt || localRoster.length === 0)
-      ) {
-        serverRosterUpdatedAt = cloudUpdatedAt || Date.now();
-        fs.writeFileSync(ROSTER_FILE, JSON.stringify(cloudStudents, null, 2), 'utf-8');
-      } else if (localRoster.length > 0 && (cloudStudents.length === 0 || serverRosterUpdatedAt > cloudUpdatedAt)) {
-        await setDoc(
-          rosterRef,
-          {
-            students: localRoster,
-            count: localRoster.length,
-            updatedAt: serverRosterUpdatedAt,
-            explicitlyCleared: false,
-            updatedAtIso: new Date(serverRosterUpdatedAt).toISOString(),
-          },
-          { merge: false }
-        );
-      }
-    } else if (localRoster.length > 0) {
-      await setDoc(
-        rosterRef,
-        {
-          students: localRoster,
-          count: localRoster.length,
-          updatedAt: serverRosterUpdatedAt,
-          explicitlyCleared: false,
-          updatedAtIso: new Date(serverRosterUpdatedAt).toISOString(),
-        },
-        { merge: false }
-      );
-    }
-
-    // Listen for real-time updates to student_roster in Cloud Firestore
-    onSnapshot(
-      rosterRef,
-      (snap) => {
-        if (!snap.exists()) return;
-        const fsData = snap.data();
-        const cloudUpdatedAt = Number(fsData?.updatedAt || 0);
-        if (cloudUpdatedAt > serverRosterUpdatedAt && Array.isArray(fsData?.students)) {
-          serverRosterUpdatedAt = cloudUpdatedAt;
-          const normalized = fsData.students.map(normalizeStudentTuitionMonths);
-          try {
-            fs.writeFileSync(ROSTER_FILE, JSON.stringify(normalized, null, 2), 'utf-8');
-          } catch {}
-        }
-      },
-      () => {}
-    );
-
-    // 2. Sync Registered Student Accounts between ndh-users.json and Cloud Firestore app_settings/registered_users
-    const localUsers = readRegisteredUsers();
-    const usersRef = doc(serverDb, 'app_settings', 'registered_users');
-    const usersSnap = await getDoc(usersRef);
-    if (usersSnap.exists()) {
-      const fsUsers = Array.isArray(usersSnap.data()?.users) ? usersSnap.data().users : [];
-      if (fsUsers.length > localUsers.length) {
-        fs.writeFileSync(USERS_FILE, JSON.stringify(fsUsers, null, 2), 'utf-8');
-      } else if (localUsers.length > fsUsers.length) {
-        await setDoc(usersRef, { users: localUsers, count: localUsers.length, updatedAt: Date.now() });
-      }
-    } else if (localUsers.length > 0) {
-      await setDoc(usersRef, { users: localUsers, count: localUsers.length, updatedAt: Date.now() });
-    }
-
-    onSnapshot(
-      usersRef,
-      (snap) => {
-        if (!snap.exists()) return;
-        const fsUsers = Array.isArray(snap.data()?.users) ? snap.data().users : [];
-        if (fsUsers.length > 0) {
-          try {
-            fs.writeFileSync(USERS_FILE, JSON.stringify(fsUsers, null, 2), 'utf-8');
-          } catch {}
-        }
-      },
-      () => {}
-    );
-  } catch (err) {
-    console.warn('bootstrapServerCloudSync warning:', err);
-  }
+  // Handled on-demand via /api/cloud-store (GitHub + disk cache) to prevent Firestore quota exhaustion
 }
 
 bootstrapServerCloudSync();
@@ -925,7 +837,16 @@ async function buildPrebuiltNetlifyZip(forceRebuild = false): Promise<string> {
   );
   fs.writeFileSync(
     path.join(distDir, 'vercel.json'),
-    JSON.stringify({ rewrites: [{ source: '/(.*)', destination: '/index.html' }] }, null, 2),
+    JSON.stringify(
+      {
+        rewrites: [
+          { source: '/api/(.*)', destination: '/api/$1' },
+          { source: '/((?!api/).*)', destination: '/index.html' },
+        ],
+      },
+      null,
+      2
+    ),
     'utf-8'
   );
 
@@ -1275,6 +1196,19 @@ async function executeVercelDeployWithToken(
     }
   }
   collectDistFiles(distDir);
+
+  // Also include Serverless API (/api/cloud-store.js & /api/package.json) in Vercel deployment
+  const apiFiles = ['api/cloud-store.js', 'api/package.json'];
+  for (const relApiFile of apiFiles) {
+    const fullApiPath = path.resolve(__dirname, relApiFile);
+    if (fs.existsSync(fullApiPath)) {
+      filesPayload.push({
+        file: relApiFile,
+        data: fs.readFileSync(fullApiPath).toString('base64'),
+        encoding: 'base64',
+      });
+    }
+  }
 
   const vHeaders: Record<string, string> = {
     Authorization: `Bearer ${token}`,
