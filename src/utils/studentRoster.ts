@@ -1,8 +1,7 @@
 import { StudentRecord, TuitionRecord } from '../types';
 import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase/config';
+import { readPersistedKey, writePersistedKey } from './cloudPersistence';
 import bundledRosterJson from '../../ndh-roster.json';
 
 export const DEFAULT_STUDENT_ROSTER: StudentRecord[] = Array.isArray(bundledRosterJson)
@@ -63,19 +62,16 @@ export function normalizeVietnamese(str: string): string {
 export function getActiveStudentRoster(): StudentRecord[] {
   try {
     const explicitlyCleared = localStorage.getItem(LOCAL_ROSTER_CLEARED_KEY);
-    const local = localStorage.getItem(LOCAL_ROSTER_KEY) || localStorage.getItem('ndh_student_roster_v1');
-    if (local) {
-      const parsed = JSON.parse(local);
-      if (Array.isArray(parsed)) {
-        const cleaned = parsed
-          .filter((s: any) => s && s.fullName && !LEGACY_MOCK_IDS.has(s.id))
-          .map(normalizeMonthlyTuitionRecord);
-        if (cleaned.length !== parsed.length) {
-          localStorage.setItem(LOCAL_ROSTER_KEY, JSON.stringify(cleaned));
-        }
-        if (cleaned.length > 0 || explicitlyCleared) {
-          return cleaned;
-        }
+    const saved = readPersistedKey<StudentRecord[] | null>(LOCAL_ROSTER_KEY, null);
+    if (Array.isArray(saved)) {
+      const cleaned = saved
+        .filter((s: any) => s && s.fullName && !LEGACY_MOCK_IDS.has(s.id))
+        .map(normalizeMonthlyTuitionRecord);
+      if (cleaned.length !== saved.length) {
+        writePersistedKey(LOCAL_ROSTER_KEY, cleaned, { fromRemote: true });
+      }
+      if (cleaned.length > 0 || explicitlyCleared) {
+        return cleaned;
       }
     }
     if (!explicitlyCleared && DEFAULT_STUDENT_ROSTER.length > 0) {
@@ -83,7 +79,7 @@ export function getActiveStudentRoster(): StudentRecord[] {
         (s: any) => s && s.fullName && !LEGACY_MOCK_IDS.has(s.id)
       ).map(normalizeMonthlyTuitionRecord);
       if (seeded.length > 0) {
-        localStorage.setItem(LOCAL_ROSTER_KEY, JSON.stringify(seeded));
+        writePersistedKey(LOCAL_ROSTER_KEY, seeded, { fromRemote: true });
         return seeded;
       }
     }
@@ -115,7 +111,7 @@ export function getLastRosterSavedTime(): string {
 
 /**
  * Save updated student roster (after teacher upload, manual save, edit, delete, or online tuition payment)
- * and sync to backend /api/roster AND Firestore so the list is permanently saved across reloads and devices.
+ * and sync to backend /api/roster AND Universal Cloud Store (`/api/cloud-store`) so the list is permanently saved across reloads and devices.
  */
 export async function saveActiveStudentRoster(roster: StudentRecord[]): Promise<boolean> {
   const cleanRoster = Array.isArray(roster)
@@ -126,7 +122,6 @@ export async function saveActiveStudentRoster(roster: StudentRecord[]): Promise<
   const now = Date.now();
 
   try {
-    localStorage.setItem(LOCAL_ROSTER_KEY, JSON.stringify(cleanRoster));
     localStorage.setItem(LOCAL_ROSTER_UPDATED_KEY, String(now));
     localStorage.setItem(LOCAL_ROSTER_USER_MODIFIED_KEY, String(now));
     if (cleanRoster.length === 0) {
@@ -134,32 +129,11 @@ export async function saveActiveStudentRoster(roster: StudentRecord[]): Promise<
     } else {
       localStorage.removeItem(LOCAL_ROSTER_CLEARED_KEY);
     }
-    window.dispatchEvent(new CustomEvent('ndh-roster-updated'));
-  } catch (e) {
-    console.warn('Error saving local student roster:', e);
-  }
+  } catch {}
 
-  let serverOk = false;
+  writePersistedKey(LOCAL_ROSTER_KEY, cleanRoster, { updatedAt: now });
 
-  // 1. Write to Cloud Firestore first (shared across PC, Mobile, AI Studio preview, and Published Cloud Run)
-  try {
-    await setDoc(
-      doc(db, 'app_settings', 'student_roster'),
-      {
-        students: cleanRoster,
-        count: cleanRoster.length,
-        updatedAt: now,
-        explicitlyCleared: cleanRoster.length === 0,
-        updatedAtIso: new Date(now).toISOString(),
-      },
-      { merge: false }
-    );
-    serverOk = true;
-  } catch (e) {
-    console.warn('Error syncing roster to Cloud Firestore:', e);
-  }
-
-  // 2. Write to Backend /api/roster
+  let serverOk = true;
   try {
     const res = await fetch('/api/roster', {
       method: 'POST',
@@ -169,9 +143,7 @@ export async function saveActiveStudentRoster(roster: StudentRecord[]): Promise<
     if (res.ok) {
       serverOk = true;
     }
-  } catch (e) {
-    console.warn('Error syncing roster to /api/roster:', e);
-  }
+  } catch {}
 
   return serverOk;
 }
@@ -263,8 +235,7 @@ function getRosterSignature(list: StudentRecord[]): string {
 }
 
 /**
- * Synchronize student roster across Cloud Firestore, Server (/api/roster), and Local Device (PC / Mobile).
- * Guarantees that whatever was uploaded on the Computer immediately syncs to the Phone and Published App.
+ * Synchronize student roster across Universal Cloud Store, Server (/api/roster), and Local Device (PC / Mobile).
  */
 export async function syncStudentRosterFromServer(
   forcePullFromCloud = false
@@ -274,26 +245,6 @@ export async function syncStudentRosterFromServer(
   const clearedRaw = localStorage.getItem(LOCAL_ROSTER_CLEARED_KEY);
   const localClearedAt = clearedRaw === 'true' ? 0 : Number(clearedRaw || 0);
 
-  let cloudStudents: StudentRecord[] = [];
-  let cloudUpdatedAt = 0;
-  let cloudExplicitlyCleared = false;
-
-  // 1. Check Cloud Firestore (shared between AI Studio dev, Published app, PC, and Mobile)
-  try {
-    const snap = await getDoc(doc(db, 'app_settings', 'student_roster'));
-    if (snap.exists()) {
-      const fsData = snap.data();
-      if (fsData && Array.isArray(fsData.students)) {
-        cloudStudents = fsData.students
-          .filter((s: any) => s && s.fullName && !LEGACY_MOCK_IDS.has(s.id))
-          .map(normalizeMonthlyTuitionRecord);
-        cloudUpdatedAt = Number(fsData.updatedAt || 0);
-        cloudExplicitlyCleared = Boolean(fsData.explicitlyCleared);
-      }
-    }
-  } catch {}
-
-  // 2. Check Backend /api/roster (only if JSON response, ignoring Netlify SPA HTML fallback)
   let serverStudents: StudentRecord[] = [];
   let serverUpdatedAt = 0;
   try {
@@ -310,103 +261,39 @@ export async function syncStudentRosterFromServer(
     }
   } catch {}
 
-  // Pick the newest remote source between Cloud Firestore and Server /api/roster
-  let bestRemoteStudents = cloudStudents;
-  let bestRemoteUpdatedAt = cloudUpdatedAt;
-  let bestRemoteCleared = cloudExplicitlyCleared;
-
-  if (
-    serverStudents.length > 0 &&
-    (serverUpdatedAt > cloudUpdatedAt || (cloudStudents.length === 0 && !cloudExplicitlyCleared))
-  ) {
-    bestRemoteStudents = serverStudents;
-    bestRemoteUpdatedAt = serverUpdatedAt || Date.now();
-    bestRemoteCleared = false;
-
-    // Also push server's newer roster to Cloud Firestore so Mobile & Published app get it immediately
-    if (serverUpdatedAt > cloudUpdatedAt || cloudStudents.length === 0) {
-      setDoc(
-        doc(db, 'app_settings', 'student_roster'),
-        {
-          students: serverStudents,
-          count: serverStudents.length,
-          updatedAt: bestRemoteUpdatedAt,
-          explicitlyCleared: false,
-          updatedAtIso: new Date(bestRemoteUpdatedAt).toISOString(),
-        },
-        { merge: false }
-      ).catch(() => {});
-    }
-  }
-
-  // If THIS device has un-synced user edits (e.g. Teacher's Computer where file was uploaded before cloud sync was active)
-  // and Cloud Firestore is empty or older than userModifiedAt, push localCurrent to Cloud Firestore!
   if (
     !forcePullFromCloud &&
     localCurrent.length > 0 &&
-    (bestRemoteStudents.length === 0 || (userModifiedAt > 0 && userModifiedAt > bestRemoteUpdatedAt))
+    (serverStudents.length === 0 || (userModifiedAt > 0 && userModifiedAt > serverUpdatedAt))
   ) {
     const pushTime = Math.max(userModifiedAt, Date.now());
-    localStorage.setItem(LOCAL_ROSTER_UPDATED_KEY, String(pushTime));
-    setDoc(
-      doc(db, 'app_settings', 'student_roster'),
-      {
-        students: localCurrent,
-        count: localCurrent.length,
-        updatedAt: pushTime,
-        explicitlyCleared: false,
-        updatedAtIso: new Date(pushTime).toISOString(),
-      },
-      { merge: false }
-    ).catch(() => {});
-
+    writePersistedKey(LOCAL_ROSTER_KEY, localCurrent, { updatedAt: pushTime });
     fetch('/api/roster', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ students: localCurrent, updatedAt: pushTime }),
     }).catch(() => {});
-
     return localCurrent;
   }
 
-  // Otherwise, if Remote (Cloud Firestore / Server) has students, adopt Remote on this device (e.g. Phone)!
-  if (bestRemoteStudents.length > 0) {
+  if (serverStudents.length > 0) {
     const diffSignature =
-      getRosterSignature(bestRemoteStudents) !== getRosterSignature(localCurrent);
+      getRosterSignature(serverStudents) !== getRosterSignature(localCurrent);
     const shouldPullRemote =
       forcePullFromCloud ||
       localCurrent.length === 0 ||
       userModifiedAt === 0 ||
-      bestRemoteUpdatedAt >= userModifiedAt ||
+      serverUpdatedAt >= userModifiedAt ||
       diffSignature;
 
-    if (shouldPullRemote && !(localClearedAt > bestRemoteUpdatedAt)) {
-      localStorage.setItem(LOCAL_ROSTER_KEY, JSON.stringify(bestRemoteStudents));
-      localStorage.setItem(
-        LOCAL_ROSTER_UPDATED_KEY,
-        String(bestRemoteUpdatedAt || Date.now())
-      );
+    if (shouldPullRemote && !(localClearedAt > serverUpdatedAt)) {
+      writePersistedKey(LOCAL_ROSTER_KEY, serverStudents, {
+        updatedAt: serverUpdatedAt || Date.now(),
+        fromRemote: true,
+      });
       localStorage.removeItem(LOCAL_ROSTER_CLEARED_KEY);
-      window.dispatchEvent(new CustomEvent('ndh-roster-updated'));
-
-      if (serverStudents.length === 0 || bestRemoteUpdatedAt > serverUpdatedAt) {
-        fetch('/api/roster', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            students: bestRemoteStudents,
-            updatedAt: bestRemoteUpdatedAt,
-          }),
-        }).catch(() => {});
-      }
-      return bestRemoteStudents;
+      return serverStudents;
     }
-  } else if (bestRemoteCleared && bestRemoteUpdatedAt >= userModifiedAt) {
-    localStorage.setItem(LOCAL_ROSTER_KEY, JSON.stringify([]));
-    localStorage.setItem(LOCAL_ROSTER_UPDATED_KEY, String(bestRemoteUpdatedAt));
-    localStorage.setItem(LOCAL_ROSTER_CLEARED_KEY, String(bestRemoteUpdatedAt));
-    window.dispatchEvent(new CustomEvent('ndh-roster-updated'));
-    return [];
   }
 
   return localCurrent;
@@ -416,130 +303,31 @@ export async function syncStudentRosterFromServer(
  * Retrieve all tuition records
  */
 export function getSavedTuitionRecords(): TuitionRecord[] {
-  try {
-    const saved = localStorage.getItem('ndh_tuitions');
-    if (saved) {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed)) {
-        return parsed.filter(
-          (r: any) => r.id && !['t-1', 't-2', 't-3', 't-4', 't-5'].includes(r.id)
-        );
-      }
-    }
-  } catch (e) {
-    console.warn('Error reading tuitions:', e);
+  const saved = readPersistedKey<TuitionRecord[]>('ndh_tuitions', []);
+  if (Array.isArray(saved)) {
+    return saved.filter(
+      (r: any) => r && r.id && !['t-1', 't-2', 't-3', 't-4', 't-5'].includes(r.id)
+    );
   }
   return [];
 }
 
 /**
- * Save tuition records to localStorage AND Cloud Firestore for cross-device sync
+ * Save tuition records to IndexedDB + localStorage + Universal Cloud Store for cross-device sync
  */
 export function saveTuitionRecords(records: TuitionRecord[]) {
   const now = Date.now();
   try {
-    localStorage.setItem('ndh_tuitions', JSON.stringify(records));
     localStorage.setItem(LOCAL_TUITION_UPDATED_KEY, String(now));
-    window.dispatchEvent(new CustomEvent('ndh-tuition-updated'));
-  } catch (e) {
-    console.warn('Error saving tuitions:', e);
-  }
-
-  setDoc(
-    doc(db, 'app_settings', 'tuition_records'),
-    {
-      records,
-      count: records.length,
-      updatedAt: now,
-    },
-    { merge: false }
-  ).catch(() => {});
+  } catch {}
+  writePersistedKey('ndh_tuitions', records, { updatedAt: now });
 }
 
-// Start real-time Firestore listeners on module load so Phone & Computer stay 100% synchronized live
 let realtimeRosterInitialized = false;
 export function initRealtimeRosterSync() {
   if (typeof window === 'undefined' || realtimeRosterInitialized) return;
   realtimeRosterInitialized = true;
-
   syncStudentRosterFromServer().catch(() => {});
-
-  // 1. Real-time listener for Student Roster
-  try {
-    onSnapshot(
-      doc(db, 'app_settings', 'student_roster'),
-      (snap) => {
-        if (!snap.exists()) return;
-        const fsData = snap.data();
-        if (!fsData || !Array.isArray(fsData.students)) return;
-
-        const cloudUpdatedAt = Number(fsData.updatedAt || 0);
-        const userModifiedAt = Number(localStorage.getItem(LOCAL_ROSTER_USER_MODIFIED_KEY) || 0);
-        const localCurrent = getActiveStudentRoster();
-
-        const incoming = fsData.students
-          .filter((s: any) => s && s.fullName && !LEGACY_MOCK_IDS.has(s.id))
-          .map(normalizeMonthlyTuitionRecord);
-
-        const sigChanged = getRosterSignature(incoming) !== getRosterSignature(localCurrent);
-
-        if (
-          cloudUpdatedAt >= userModifiedAt ||
-          userModifiedAt === 0 ||
-          (localCurrent.length === 0 && incoming.length > 0 && !fsData.explicitlyCleared) ||
-          (sigChanged && cloudUpdatedAt >= userModifiedAt)
-        ) {
-          localStorage.setItem(LOCAL_ROSTER_KEY, JSON.stringify(incoming));
-          localStorage.setItem(
-            LOCAL_ROSTER_UPDATED_KEY,
-            String(cloudUpdatedAt || Date.now())
-          );
-          if (incoming.length === 0 && fsData.explicitlyCleared) {
-            localStorage.setItem(LOCAL_ROSTER_CLEARED_KEY, String(cloudUpdatedAt));
-          } else {
-            localStorage.removeItem(LOCAL_ROSTER_CLEARED_KEY);
-          }
-          window.dispatchEvent(new CustomEvent('ndh-roster-updated'));
-        }
-      },
-      () => {}
-    );
-  } catch {}
-
-  // 2. Real-time listener for Tuition Records
-  try {
-    onSnapshot(
-      doc(db, 'app_settings', 'tuition_records'),
-      (snap) => {
-        if (!snap.exists()) {
-          const localTuitions = getSavedTuitionRecords();
-          if (localTuitions.length > 0) {
-            saveTuitionRecords(localTuitions);
-          }
-          return;
-        }
-        const fsData = snap.data();
-        if (!fsData || !Array.isArray(fsData.records)) return;
-        const cloudUpdatedAt = Number(fsData.updatedAt || 0);
-        const localUpdatedAt = Number(localStorage.getItem(LOCAL_TUITION_UPDATED_KEY) || 0);
-        const localTuitions = getSavedTuitionRecords();
-
-        if (
-          cloudUpdatedAt >= localUpdatedAt ||
-          localUpdatedAt === 0 ||
-          (localTuitions.length === 0 && fsData.records.length > 0)
-        ) {
-          localStorage.setItem('ndh_tuitions', JSON.stringify(fsData.records));
-          localStorage.setItem(
-            LOCAL_TUITION_UPDATED_KEY,
-            String(cloudUpdatedAt || Date.now())
-          );
-          window.dispatchEvent(new CustomEvent('ndh-tuition-updated'));
-        }
-      },
-      () => {}
-    );
-  } catch {}
 }
 
 if (typeof window !== 'undefined') {

@@ -7,7 +7,7 @@ import {
   sendPasswordResetEmail,
   updatePassword,
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { auth, db, googleProvider } from '../firebase/config';
 import { UserProfile, UserRole } from '../types';
 import {
@@ -17,6 +17,7 @@ import {
   normalizeClassName,
   deriveGradeFromClass,
 } from '../utils/studentRoster';
+import { readPersistedKey, writePersistedKey } from '../utils/cloudPersistence';
 import bundledUsersJson from '../../ndh-users.json';
 
 export interface LocalStoredAccount {
@@ -83,28 +84,19 @@ export function normalizeEmailClient(str: string): string {
 }
 
 export function getLocalRegisteredAccounts(): LocalStoredAccount[] {
-  try {
-    const raw = localStorage.getItem('ndh_registered_users');
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-    if (Array.isArray(bundledUsersJson) && bundledUsersJson.length > 0) {
-      localStorage.setItem('ndh_registered_users', JSON.stringify(bundledUsersJson));
-      return bundledUsersJson as LocalStoredAccount[];
-    }
-  } catch {
-    // ignore
+  const saved = readPersistedKey<LocalStoredAccount[]>('ndh_registered_users', []);
+  if (Array.isArray(saved) && saved.length > 0) {
+    return saved;
+  }
+  if (Array.isArray(bundledUsersJson) && bundledUsersJson.length > 0) {
+    writePersistedKey('ndh_registered_users', bundledUsersJson, { fromRemote: true });
+    return bundledUsersJson as LocalStoredAccount[];
   }
   return [];
 }
 
-export function saveLocalRegisteredAccounts(accounts: LocalStoredAccount[]) {
-  try {
-    localStorage.setItem('ndh_registered_users', JSON.stringify(accounts));
-  } catch {
-    // ignore
-  }
+export function saveLocalRegisteredAccounts(accounts: LocalStoredAccount[], fromRemote = false) {
+  writePersistedKey('ndh_registered_users', accounts, { fromRemote });
 }
 
 function mergeAccountLists(
@@ -205,7 +197,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Also pull any course registrations from RegistrationPage ('ndh_registrations') into accounts
     try {
-      const courseRegs = JSON.parse(localStorage.getItem('ndh_registrations') || '[]');
+      const courseRegs = readPersistedKey<any[]>('ndh_registrations', []);
       if (Array.isArray(courseRegs) && courseRegs.length > 0) {
         const converted: LocalStoredAccount[] = courseRegs
           .filter((r: any) => r && r.fullName)
@@ -229,16 +221,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // ignore
     }
 
-    // 1. Pull from Cloud Firestore (shared between PC, Mobile, AI Studio, and Published App)
-    let cloudUsers: LocalStoredAccount[] = [];
-    try {
-      const snap = await getDoc(doc(db, 'app_settings', 'registered_users'));
-      if (snap.exists() && Array.isArray(snap.data()?.users)) {
-        cloudUsers = snap.data().users;
-      }
-    } catch {}
-
-    // 2. Pull from Backend /api/auth/users (only if JSON response, ignoring Netlify SPA HTML fallback)
+    // Pull from Backend /api/auth/users (only if JSON response)
     let serverUsers: LocalStoredAccount[] = [];
     try {
       const res = await fetch('/api/auth/users');
@@ -251,26 +234,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     } catch {}
 
-    const merged = mergeAccountLists(
-      cloudUsers,
-      mergeAccountLists(serverUsers, localList)
-    );
-    saveLocalRegisteredAccounts(merged);
+    const merged = mergeAccountLists(serverUsers, localList);
+    saveLocalRegisteredAccounts(merged, merged.length <= serverUsers.length);
     setRegisteredAccounts(merged);
 
-    if (merged.length > cloudUsers.length) {
-      setDoc(
-        doc(db, 'app_settings', 'registered_users'),
-        {
-          users: merged,
-          count: merged.length,
-          updatedAt: Date.now(),
-        },
-        { merge: false }
-      ).catch(() => {});
-    }
-
-    if (merged.length > serverUsers.length) {
+    if (merged.length > serverUsers.length && serverUsers.length > 0) {
       fetch('/api/auth/sync-users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

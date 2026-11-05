@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase/config';
 import { AppSettings, ChemistryClass } from '../types';
+import { readPersistedKey, writePersistedKey } from '../utils/cloudPersistence';
 
 export const INITIAL_CLASSES: ChemistryClass[] = [
   { id: 'h6-1', name: 'H6.1', grade: 'Khối 6', teacher: 'Thầy Nguyễn Đình Hành', schedule: 'Thứ 2 - Thứ 5 (17h30 - 19h00)', description: 'Chuyên đề Khoa học Tự nhiên 6 - Phân môn Chất và Sự biến đổi của chất', studentCount: 22 },
@@ -99,13 +98,9 @@ const LOCAL_SETTINGS_KEY = 'ndh_app_settings_v2';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [settings, setSettings] = useState<AppSettings>(() => {
-    try {
-      const saved = localStorage.getItem(LOCAL_SETTINGS_KEY);
-      if (saved) {
-        return { ...DEFAULT_APP_SETTINGS, ...JSON.parse(saved) };
-      }
-    } catch {
-      // ignore
+    const saved = readPersistedKey<Partial<AppSettings> | null>(LOCAL_SETTINGS_KEY, null);
+    if (saved && typeof saved === 'object') {
+      return { ...DEFAULT_APP_SETTINGS, ...saved };
     }
     return DEFAULT_APP_SETTINGS;
   });
@@ -118,10 +113,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [isChangePasswordModalOpen, setIsChangePasswordModalOpen] = useState<boolean>(false);
 
-  // Sync settings with Backend /api/settings + Firestore in real time across PC, Mobile & Published App
+  // Sync settings with Backend /api/settings + Universal Cloud Store across PC, Mobile, Vercel & Netlify
   useEffect(() => {
     fetch('/api/settings')
-      .then((res) => (res.ok ? res.json() : ({} as Record<string, any>)))
+      .then((res) => {
+        const ct = res.headers.get('content-type') || '';
+        return res.ok && ct.includes('application/json') ? res.json() : ({} as Record<string, any>);
+      })
       .then((serverData: Record<string, any>) => {
         if (serverData && Object.keys(serverData).length > 0) {
           setSettings((prev) => {
@@ -139,78 +137,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                 serverData.defaultTuitionAmount || prev.defaultTuitionAmount || 600000
               ),
             };
-            try {
-              localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(merged));
-            } catch {}
+            writePersistedKey(LOCAL_SETTINGS_KEY, merged, { fromRemote: true });
             return merged;
           });
         }
       })
       .catch(() => {});
 
-    const settingsDocRef = doc(db, 'app_settings', 'main_config');
-    const unsubscribe = onSnapshot(
-      settingsDocRef,
-      (snap) => {
-        if (snap.exists()) {
-          const fsData = snap.data() as Partial<AppSettings> & { updatedAt?: number };
-          const cloudUpdatedAt = Number(fsData.updatedAt || 0);
-          const localUpdatedAt = Number(
-            localStorage.getItem(LOCAL_SETTINGS_KEY + '_updated_at') || 0
-          );
-
-          setSettings((prev) => {
-            if (localUpdatedAt > cloudUpdatedAt && cloudUpdatedAt > 0) {
-              return prev;
-            }
-            const merged: AppSettings = {
-              ...DEFAULT_APP_SETTINGS,
-              ...prev,
-              ...fsData,
-              logoUrl: fsData.logoUrl || prev.logoUrl || '/favicon.png',
-              tuitionQrUrl: fsData.tuitionQrUrl || prev.tuitionQrUrl || '',
-              bankAccountNumber:
-                fsData.bankAccountNumber ?? prev.bankAccountNumber ?? '',
-              bankName: fsData.bankName || prev.bankName || 'Vietcombank',
-              bankAccountHolder:
-                fsData.bankAccountHolder || prev.bankAccountHolder || 'NGUYỄN ĐÌNH HÀNH',
-              defaultTuitionAmount: Number(
-                fsData.defaultTuitionAmount || prev.defaultTuitionAmount || 600000
-              ),
-              logoSize: fsData.logoSize || prev.logoSize || 100,
-              logoShape: fsData.logoShape || prev.logoShape || 'original',
-            };
-            try {
-              localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(merged));
-              if (cloudUpdatedAt) {
-                localStorage.setItem(
-                  LOCAL_SETTINGS_KEY + '_updated_at',
-                  String(cloudUpdatedAt)
-                );
-              }
-            } catch {}
-            return merged;
-          });
-        } else {
-          try {
-            const raw = localStorage.getItem(LOCAL_SETTINGS_KEY);
-            if (raw) {
-              const parsed = JSON.parse(raw);
-              setDoc(
-                settingsDocRef,
-                { ...DEFAULT_APP_SETTINGS, ...parsed, updatedAt: Date.now() },
-                { merge: true }
-              ).catch(() => {});
-            }
-          } catch {}
-        }
-      },
-      (error) => {
-        console.warn('Firestore settings listener:', error);
+    const handleCloudSettingsUpdate = () => {
+      const latest = readPersistedKey<Partial<AppSettings> | null>(LOCAL_SETTINGS_KEY, null);
+      if (latest && typeof latest === 'object') {
+        setSettings((prev) => ({
+          ...DEFAULT_APP_SETTINGS,
+          ...prev,
+          ...latest,
+          logoUrl: latest.logoUrl || prev.logoUrl || '/favicon.png',
+          tuitionQrUrl: latest.tuitionQrUrl || prev.tuitionQrUrl || '',
+          bankAccountNumber: latest.bankAccountNumber ?? prev.bankAccountNumber ?? '',
+          bankName: latest.bankName || prev.bankName || 'Vietcombank',
+          bankAccountHolder:
+            latest.bankAccountHolder || prev.bankAccountHolder || 'NGUYỄN ĐÌNH HÀNH',
+          defaultTuitionAmount: Number(
+            latest.defaultTuitionAmount || prev.defaultTuitionAmount || 600000
+          ),
+          logoSize: latest.logoSize || prev.logoSize || 100,
+          logoShape: latest.logoShape || prev.logoShape || 'original',
+        }));
       }
-    );
-
-    return () => unsubscribe();
+    };
+    window.addEventListener('ndh-settings-updated', handleCloudSettingsUpdate);
+    return () => window.removeEventListener('ndh-settings-updated', handleCloudSettingsUpdate);
   }, []);
 
   // Automatically sync Browser Tab Favicon, Apple Touch Icon & Document Title with App Logo & Banner Title
